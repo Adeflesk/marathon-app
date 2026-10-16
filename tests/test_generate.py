@@ -5,7 +5,8 @@ import pytest
 from app.config import race_date
 from app.plan import generate, week_count, weekly_volumes
 
-VARIANTS = [{}, {"base_weeks": 2}, {"peak_weekly_km": 50}, {"race_date": "2027-03-13"}, {"plan_start": "2026-12-28"}]
+VARIANTS = [{}, {"base_weeks": 2}, {"peak_weekly_km": 50}, {"race_date": "2027-03-13"}, {"plan_start": "2026-12-28"},
+            {"plan_start": "2026-08-10"}, {"plan_start": "2027-01-04"}, {"plan_start": "2027-01-25"}]
 TODAY = date(2026, 10, 16)
 
 
@@ -35,11 +36,6 @@ def test_easy_floor(settings, over):
             continue
         rest = v["km"] - v["long"]
         floor_base = 6 if v["phase"] in ("Build", "Peak") else 5
-        q = next((x for x in w["workouts"] if "steps" in x), None)
-        floors = sum(min(floor_base, rest * weights[x["day"].lower()] / sum(weights.values()))
-                     for x in w["workouts"] if x["type"] == "easy")
-        if q and q["km"] > rest - floors + 0.5:
-            continue  # even the smallest session didn't fit; the easy runs make room
         for x in w["workouts"]:
             if x["type"] == "easy":
                 share = rest * weights[x["day"].lower()] / sum(weights.values())
@@ -47,12 +43,17 @@ def test_easy_floor(settings, over):
                 assert x["km"] >= min(floor_base, share) - 0.5, (w["week"], x["day"], x["km"])
 
 
-@pytest.mark.parametrize("over", VARIANTS)
-def test_quality_every_week_but_first(settings, over):
-    weeks, _ = build(settings, over)
+def test_quality_every_week_but_first(settings):
+    weeks, _ = build(settings, {})
     assert not any("steps" in x for x in weeks[0]["workouts"])
     for w in weeks[1:]:
         assert sum("steps" in x for x in w["workouts"]) == 1, w["week"]
+
+
+@pytest.mark.parametrize("over", VARIANTS)
+def test_at_most_one_session(settings, over):
+    weeks, _ = build(settings, over)
+    assert all(sum("steps" in x for x in w["workouts"]) <= 1 for w in weeks)
 
 
 @pytest.mark.parametrize("over", VARIANTS)

@@ -5,7 +5,8 @@ import pytest
 from app.plan import week_count, weekly_volumes
 
 ORDER = ["general", "threshold", "strength", "specific"]
-VARIANTS = [{}, {"base_weeks": 2}, {"peak_weekly_km": 50}, {"race_date": "2027-03-13"}, {"plan_start": "2026-12-28"}]
+VARIANTS = [{}, {"base_weeks": 2}, {"peak_weekly_km": 50}, {"race_date": "2027-03-13"}, {"plan_start": "2026-12-28"},
+            {"plan_start": "2026-10-12"}, {"plan_start": "2026-08-10"}, {"plan_start": "2027-01-04"}]
 
 
 def vols_for(settings, **over):
@@ -74,3 +75,10 @@ def test_short_plan_drops_early_blocks(settings):
     assert len(vols) == 10
     present = list(dict.fromkeys(v["block"] for v in vols if v["block"]))
     assert present == ORDER[len(ORDER) - len(present):]
+
+
+@pytest.mark.parametrize("over", VARIANTS)
+def test_final_peak_run_has_mp(settings, over):
+    vols = vols_for(settings, **over)
+    last_build = [v for v in vols if v["phase"] in ("Build", "Peak")][-1]
+    assert last_build["mp_km"] > 0, last_build

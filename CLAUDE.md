@@ -57,7 +57,8 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
     `settings.paces` key, a number in s/km, or `None` (an open target).
   - `quality_session()` picks the session by block and position, and `_fit()` trims it to the work
     caps (12% of the week at `tempo`, 18% at `subthreshold`/MP) and to the day's room.
-  - `scale_session()` applies the check-in trim by reps (never below 2). `hard` marks sessions that
+  - `scale_session()` applies the check-in trim by reps (rounded, never below 2), or by a shorter rep
+    when reps can't drop. `hard` marks sessions that
     lighten an adjacent Strength A.
 - `app/main.py` — `build_view()` is the hub every page uses: generate plan → apply the *previous* week's
   check-in factor → join actual runs from SQLite by date → attach strength sessions and current/past flags.

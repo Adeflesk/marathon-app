@@ -93,30 +93,30 @@ def weekly_volumes(n: int, s: dict) -> list[dict]:
                     "block": block[i], "block_week": block_week[i], "mp_km": 0,
                     "taper_week": i - build_end if k == "taper" else None})
 
-    # specific block: no two 30 km+ long runs in a row; the easier week is 85% and all easy
+    # no two 30 km+ long runs in a row anywhere; the easier week is 85% and all easy. The final peak
+    # run (exempt from the guard) is never the one eased, so the week before it gives way instead.
     easy_weeks = set()
-    if runs:
-        spec = runs[-1]
+    run_of = {i: r for r in runs for i in r}
 
-        def ease(i: int) -> None:
-            earlier = [out[j]["long"] for j in spec if j < i] or [w["long"] for w in out[max(0, i - 4):i]]
-            out[i]["long"] = round(0.85 * max(earlier))
-            easy_weeks.add(i)
+    def ease(i: int) -> None:
+        earlier = [out[j]["long"] for j in run_of[i] if j < i] or [w["long"] for w in out[max(0, i - 4):i]]
+        out[i]["long"] = round(0.85 * max(earlier))
+        easy_weeks.add(i)
 
-        for i in spec[:-1]:
-            if i > 0 and out[i - 1]["long"] >= 30:
-                ease(i)
-        if len(spec) > 1 and out[spec[-2]]["long"] >= 30:
-            ease(spec[-2])
+    for i in sorted(run_of):
+        if i != last_build and i > 0 and out[i - 1]["long"] >= 30:
+            ease(i)
+    if last_build is not None and kinds[last_build - 1] == "build" and out[last_build - 1]["long"] >= 30:
+        ease(last_build - 1)
 
-    # MP finishes every other week from the first strength week: 6, 8, 10, 12 km
+    # MP finishes every other week from the first strength week, counted back from the final peak
+    # run so it always gets one: 6, 8, 10, 12 km
     if runs:
         start = (runs[-2] if len(runs) > 1 else runs[-1])[0]
-        amount = 6
-        for i in range(start, n):
-            if (i - start) % 2 == 0 and kinds[i] == "build" and i not in easy_weeks:
-                out[i]["mp_km"] = max(0, min(amount, out[i]["long"] - 8))
-                amount = min(12, amount + 2)
+        mp_weeks = [i for i in range(start, last_build + 1)
+                    if (last_build - i) % 2 == 0 and kinds[i] == "build" and i not in easy_weeks]
+        for k, i in enumerate(mp_weeks):
+            out[i]["mp_km"] = max(0, min(6 + 2 * k, 12, out[i]["long"] - 8))
     return out
 
 
@@ -176,7 +176,7 @@ def _size_mid_week(v, i, s, days, quality_day, weights, total_w, rest, is_race_w
     Easy runs keep at least min(6 km in Build/Peak or 5 km, their normal share); the last run absorbs
     rounding so the week hits its target.
     """
-    from .sessions import describe, quality_session, session_km  # sessions imports plan
+    from .sessions import describe, quality_session, session_km, strides_session  # sessions imports plan
 
     paces = s["paces"]
     if is_race_week:
@@ -198,6 +198,11 @@ def _size_mid_week(v, i, s, days, quality_day, weights, total_w, rest, is_race_w
     if quality_day:
         max_km = rest - sum(min(floor, share[d]) for d in easy_days)
         sess = quality_session(v, i, s, max_km)
+        # no room even for the smallest session (very short plans): strides, else an easy run
+        for fallback in (lambda: strides_session(v, s), lambda: None):
+            if sess is None or session_km(sess["steps"], paces) <= max_km + 0.25:
+                break
+            sess = fallback()
     if not sess:
         easy_days = days  # no session: the quality day is just another run in the split
     out = {}

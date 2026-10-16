@@ -1,4 +1,3 @@
-import math
 from datetime import date
 
 import pytest
@@ -29,7 +28,8 @@ def test_trim_scales_reps(client, settings):
     s, weeks = main.build_view()
     trimmed = quality(weeks[11])
     assert weeks[11]["factor"] == 0.8
-    assert reps(trimmed["steps"]) == [max(2, math.floor(r * 0.8)) for r in reps(original["steps"])]
+    expected = [max(2, round(r * 0.8)) for r in reps(original["steps"])]
+    assert reps(trimmed["steps"]) == expected
     assert trimmed["km"] == _half(session_km(trimmed["steps"], s["paces"]))
     assert trimmed["note"] == describe(trimmed["steps"], s["paces"])
 
@@ -55,3 +55,13 @@ def test_strength_a_reduced_only_next_to_hard(client):
 
 def test_pages_200(client):
     assert [client.get(p).status_code for p in ("/", "/plan", "/strength", "/equipment")] == [200] * 4
+
+
+def test_trim_shrinks_every_session(settings):
+    from app.sessions import scale_session
+    for week in generate(settings, main.today()):
+        for x in week["workouts"]:
+            if "steps" in x and x["type"] != "strides":
+                before = session_km(x["steps"], settings["paces"])
+                scale_session(x, 0.8, settings["paces"])
+                assert session_km(x["steps"], settings["paces"]) < before - 0.4, (week["week"], x["type"], x["note"])

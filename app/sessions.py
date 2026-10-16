@@ -140,6 +140,12 @@ def _session(kind: str, steps: list, v: dict, paces: dict) -> dict:
     return {"type": kind, "pace": TYPE_PACE[kind], "hard": hard, "steps": steps, "note": describe(steps, paces)}
 
 
+def strides_session(v: dict, s: dict, n: int = 6) -> dict:
+    """An easy run with strides; also the fallback when a week has no room for its session."""
+    steps = [_st("Easy", WU_KM, "easy", "warmup"), _strides(n), _st("CD", CD_KM, "easy", "cooldown")]
+    return _session("strides", steps, v, s["paces"])
+
+
 def quality_session(v: dict, week_index: int, s: dict, max_km: float) -> dict | None:
     """The quality day for one week of weekly_volumes(), or None (first Rebuild week)."""
     paces = s["paces"]
@@ -147,8 +153,7 @@ def quality_session(v: dict, week_index: int, s: dict, max_km: float) -> dict | 
     if phase == "Rebuild":
         if week_index == 0:
             return None
-        steps = [_st("Easy", WU_KM, "easy", "warmup"), _strides(6 if week_index == 1 else 8), _st("CD", CD_KM, "easy", "cooldown")]
-        return _session("strides", steps, v, paces)
+        return strides_session(v, s, 6 if week_index == 1 else 8)
     if phase == "Taper":
         if v["taper_week"] == 0:
             return _session("strength", _fit("strength", 2, 3.2, 0.8, v["km"], max_km, paces), v, paces)
@@ -167,9 +172,26 @@ def quality_session(v: dict, week_index: int, s: dict, max_km: float) -> dict | 
 
 
 def scale_session(workout: dict, factor: float, paces: dict) -> None:
-    """Check-in trim: fewer reps (never below 2); km and note follow the steps."""
+    """Check-in trim: fewer reps (rounded, never below 2). Where reps can't drop (already 2, or the
+    specific session's two long reps), the reps get one rung shorter instead. km and note follow."""
+    ladder = LADDER.get(workout["type"], [])
+
+    def shorten(step: dict) -> bool:
+        if step.get("km") in ladder and ladder.index(step["km"]) < len(ladder) - 1:
+            step["km"] = ladder[ladder.index(step["km"]) + 1]
+            return True
+        return False
+
     for st in workout["steps"]:
         if "repeat" in st:
-            st["repeat"] = max(2, math.floor(st["repeat"] * factor))
+            reps = max(2, round(st["repeat"] * factor))
+            if reps < st["repeat"]:
+                st["repeat"] = reps
+            else:
+                shorten(st["steps"][0])
+    if workout["type"] == "specific":
+        for st in workout["steps"]:
+            if st["label"] == "MP":
+                shorten(st)
     workout["km"] = _half(session_km(workout["steps"], paces))
     workout["note"] = describe(workout["steps"], paces)

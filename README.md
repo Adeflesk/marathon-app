@@ -113,6 +113,7 @@ The shape follows what coaches and the research agree on. The full write-up is i
   back to back.
 - **Taper:** volume falls every week (45, then 33 km), then race week.
 - **Check-in:** the weekly check-in (feel 1-5, ankle pain 0-10) trims the following week by 10% or
-  20% when it's a rough one. Sessions lose reps, never below 2. The plan only ever adjusts down.
+  20% when it's a rough one. Sessions lose reps (never below 2) or get shorter reps. The plan only ever
+  adjusts down.
 
 This is a draft shape, not coaching. Stop if the ankle hurts, and see a physio if it keeps happening.

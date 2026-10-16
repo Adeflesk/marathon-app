@@ -76,9 +76,19 @@ def test_scale_session(settings):
     w["note"] = sessions.describe(w["steps"], settings["paces"])
     before = (w["km"], w["note"])
     sessions.scale_session(w, 0.8, settings["paces"])
-    assert repeats(w["steps"])[0]["repeat"] == 4
+    assert repeats(w["steps"])[0]["repeat"] == 5  # round(6 × 0.8)
     assert w["km"] == _half(sessions.session_km(w["steps"], settings["paces"])) and w["km"] < before[0]
-    assert w["note"] != before[1] and "4 × 1.6 km" in w["note"]
+    assert w["note"] != before[1] and "5 × 1.6 km" in w["note"]
+
+
+def test_scale_session_shortens_when_reps_cannot_drop(settings):
+    w = {"type": "threshold", "steps": [
+        {"label": "WU", "km": 2, "pace": "easy", "intensity": "warmup"},
+        {"repeat": 2, "steps": [{"label": "Rep", "km": 2.4, "pace": "tempo", "intensity": "active"},
+                                {"label": "Jog", "seconds": 120, "pace": None, "intensity": "recovery"}]},
+        {"label": "CD", "km": 1, "pace": "easy", "intensity": "cooldown"}]}
+    sessions.scale_session(w, 0.8, settings["paces"])
+    assert repeats(w["steps"])[0]["repeat"] == 2 and repeats(w["steps"])[0]["steps"][0]["km"] == 1.6
 
 
 def test_describe(settings):
