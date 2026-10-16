@@ -63,6 +63,7 @@ def generate(s: dict, today: date) -> list[dict]:
     mid_days = [d for d in DAYS if d in run_days and run_days[d] != "long"]
     weights = {d: (0.4 if run_days[d] == "quality" else 0.3) for d in mid_days}
     total_w = sum(weights.values())
+    race = race_date(s)
     weeks = []
     for i, v in enumerate(vols):
         monday = start + timedelta(weeks=i)
@@ -74,6 +75,8 @@ def generate(s: dict, today: date) -> list[dict]:
         for pos, d in enumerate(mid_days):
             role = run_days[d]
             day = monday + timedelta(days=DAYS.index(d))
+            if is_race_week and day >= race:  # nothing on or after race day
+                continue
             if is_race_week:
                 if role == "quality":
                     km = 5
@@ -100,7 +103,7 @@ def generate(s: dict, today: date) -> list[dict]:
             workouts.append(wk)
         lday = monday + timedelta(days=DAYS.index(long_day))
         if is_race_week:
-            workouts.append(_w(lday, "race", 42.195, "marathon", f"{s['race_name']}. Start at goal pace or a touch slower."))
+            workouts.append(_w(race, "race", 42.195, "marathon", f"{s['race_name']}. Start at goal pace or a touch slower."))
         elif long_km:
             mp_km = 0
             if v["phase"] in ("Build", "Peak") and i >= 10:

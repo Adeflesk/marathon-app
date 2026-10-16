@@ -47,7 +47,7 @@ DEFAULTS = {
 }
 
 
-REPLACE_KEYS = {"run_days", "strength_days"}  # a custom value replaces the default, not merges
+REPLACE_KEYS = {"run_days"}  # a custom value replaces the default, not merges
 
 
 def load_settings() -> dict:

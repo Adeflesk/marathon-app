@@ -35,7 +35,7 @@ The plan is **never stored**. Every request recomputes it from settings, and onl
 are persisted. Keep it that way: changing `settings.json` or the generator should reshape the whole plan.
 
 - `app/config.py` — `DEFAULTS` merged with optional `settings.json` at the repo root. Dict values are
-  shallow-merged, except keys in `REPLACE_KEYS` (`run_days`, `strength_days`) which replace wholesale.
+  shallow-merged, except keys in `REPLACE_KEYS` (`run_days`) which replace wholesale.
   Also loads `.env` itself (no python-dotenv). `plan_start` is pinned (must be a Monday) so week numbers
   don't drift.
 - `app/plan.py` — pure functions. `weekly_volumes()` shapes km/long-run per week (Rebuild → Build/Peak

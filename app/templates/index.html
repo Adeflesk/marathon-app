@@ -58,9 +58,11 @@
     <input type="hidden" name="week" value="{{ week.week }}">
     <div class="row">
       <div><label>How did it feel? (1 awful, 5 great)</label>
-        <select name="feel">{% for i in [1,2,3,4,5] %}<option value="{{ i }}" {{ 'selected' if i==3 }}>{{ i }}</option>{% endfor %}</select></div>
+        {% set feel = week.checkin.feel if week.checkin else 3 %}
+        <select name="feel">{% for i in [1,2,3,4,5] %}<option value="{{ i }}" {{ 'selected' if i==feel }}>{{ i }}</option>{% endfor %}</select></div>
       <div><label>Ankle pain (0 none, 10 severe)</label>
-        <select name="pain">{% for i in range(0,11) %}<option value="{{ i }}">{{ i }}</option>{% endfor %}</select></div>
+        {% set pain = week.checkin.pain if week.checkin else 0 %}
+        <select name="pain">{% for i in range(0,11) %}<option value="{{ i }}" {{ 'selected' if i==pain }}>{{ i }}</option>{% endfor %}</select></div>
     </div>
     <label>Note</label><textarea name="note" rows="2">{{ week.checkin.note if week.checkin else '' }}</textarea>
     <p><button type="submit">Save check-in</button></p>

@@ -9,6 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from . import db
+from .config import DEFAULTS
 from .plan import DAYS
 
 EQUIP_PATH = Path(db.DB_PATH).parent / "equipment.json"
@@ -208,7 +209,7 @@ def sessions_for_week(week: dict, eq: dict, factor: float = 1.0, days: dict | No
     toks = tokens(eq)
     if phase == "Race week":
         return []
-    days = days or {"B": "tue", "A": "thu"}
+    days = {**DEFAULTS["strength_days"], **(days or {})}
     a_day = monday + timedelta(days=DAYS.index(days["A"]))
     b_day = monday + timedelta(days=DAYS.index(days["B"]))
     # a tempo run the day before or after the leg session makes the legs a poor place to add volume
