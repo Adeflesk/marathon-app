@@ -16,14 +16,19 @@ from fit_tool.profile.profile_type import (
 )
 
 from .pace_engine import fmt_pace
-from .plan import _half
+from .sessions import pace_s
 
 # (slower seconds, faster seconds) around the target pace
 EASY_BAND = (30, -30)
 HARD_BAND = (10, -10)
 
 
-def _step(name, intensity, pace, band, km=None, minutes=None):
+INTENSITY = {"warmup": Intensity.WARMUP, "active": Intensity.ACTIVE, "recovery": Intensity.RECOVERY,
+             "cooldown": Intensity.COOLDOWN}
+
+
+def _step(name, intensity, pace, band, km=None, minutes=None, seconds=None, note=None):
+    """One FIT step. pace None means an open target (recoveries), as in Garmin's own workouts."""
     s = WorkoutStepMessage()
     s.workout_step_name = name[:15]
     s.intensity = intensity
@@ -32,29 +37,57 @@ def _step(name, intensity, pace, band, km=None, minutes=None):
         s.duration_distance = km * 1000.0
     else:
         s.duration_type = WorkoutStepDuration.TIME
-        s.duration_time = minutes * 60.0
-    s.target_type = WorkoutStepTarget.SPEED
+        s.duration_time = seconds if seconds is not None else minutes * 60.0
     s.target_value = 0
-    slow, fast = pace + band[0], pace + band[1]
-    s.custom_target_speed_low = 1000.0 / slow   # m/s, slower end of the range
-    s.custom_target_speed_high = 1000.0 / fast  # m/s, faster end of the range
+    if pace is None:
+        s.target_type = WorkoutStepTarget.OPEN
+    else:
+        s.target_type = WorkoutStepTarget.SPEED
+        slow, fast = pace + band[0], pace + band[1]
+        s.custom_target_speed_low = 1000.0 / slow   # m/s, slower end of the range
+        s.custom_target_speed_high = 1000.0 / fast  # m/s, faster end of the range
+    if note:
+        s.notes = note
     return s
+
+
+def _repeat(first_step: int, reps: int) -> WorkoutStepMessage:
+    """Go back to first_step and run the block reps times in all."""
+    s = WorkoutStepMessage()
+    s.duration_type = WorkoutStepDuration.REPEAT_UNTIL_STEPS_CMPLT
+    s.duration_step = first_step
+    s.target_repeat_steps = reps
+    return s
+
+
+def _structured(steps: list, paces: dict) -> list:
+    out = []
+
+    def add(st):
+        pace = None if st["pace"] is None else pace_s(st["pace"], paces)
+        band = EASY_BAND if pace is not None and pace >= paces["long"] else HARD_BAND
+        name = st["label"] if pace is None else f"{st['label']} {fmt_pace(pace)}"
+        out.append(_step(name, INTENSITY[st["intensity"]], pace, band,
+                         km=st.get("km"), seconds=st.get("seconds"), note=st.get("note")))
+
+    for st in steps:
+        if "repeat" in st:
+            first = len(out)
+            for inner in st["steps"]:
+                add(inner)
+            out.append(_repeat(first, st["repeat"]))
+        else:
+            add(st)
+    return out
 
 
 def steps_for(w: dict, paces: dict) -> list:
     """Translate a planned workout dict into FIT steps."""
-    easy, longp, mp, tempo = paces["easy"], paces["long"], paces["marathon"], paces["tempo"]
+    easy, longp, mp = paces["easy"], paces["long"], paces["marathon"]
+    if "steps" in w:
+        return _structured(w["steps"], paces)
     kind = w["type"]
     label = lambda p: fmt_pace(p)
-    if kind == "tempo":
-        minutes = w.get("tempo_min", 20)
-        tempo_km = minutes * 60 / tempo
-        cool_km = max(1.0, _half(w["km"] - 2 - tempo_km))  # cool-down absorbs the rest of the planned distance
-        return [
-            _step(f"WU {label(easy)}", Intensity.WARMUP, easy, EASY_BAND, km=2),
-            _step(f"Tempo {label(tempo)}", Intensity.ACTIVE, tempo, HARD_BAND, minutes=minutes),
-            _step(f"CD {label(easy)}", Intensity.COOLDOWN, easy, EASY_BAND, km=cool_km),
-        ]
     if kind == "long":
         mp_km = w.get("mp_km", 0)
         if mp_km:

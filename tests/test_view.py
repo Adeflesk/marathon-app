@@ -34,13 +34,12 @@ def test_trim_scales_reps(client, settings):
     assert trimmed["note"] == describe(trimmed["steps"], s["paces"])
 
 
-@pytest.mark.xfail(reason="FIT repeat steps arrive in Task 6", strict=True)
 def test_trimmed_fit_matches(client):
     from fit_tool.profile.profile_type import WorkoutStepDuration
     s, weeks = main.build_view()
     trimmed = quality(weeks[11])
     msgs = garmin.steps_for(trimmed, s["paces"])
-    counts = [m.target_repeat_steps for m in msgs if m.duration_type == WorkoutStepDuration.REPEAT_UNTIL_STEPS_CMPLT]
+    counts = [m.target_repeat_steps for m in msgs if m.duration_type == WorkoutStepDuration.REPEAT_UNTIL_STEPS_CMPLT.value]
     assert counts == reps(trimmed["steps"])
 
 
