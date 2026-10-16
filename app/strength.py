@@ -212,18 +212,18 @@ def sessions_for_week(week: dict, eq: dict, factor: float = 1.0, days: dict | No
     days = {**DEFAULTS["strength_days"], **(days or {})}
     a_day = monday + timedelta(days=DAYS.index(days["A"]))
     b_day = monday + timedelta(days=DAYS.index(days["B"]))
-    # a tempo run the day before or after the leg session makes the legs a poor place to add volume
-    has_tempo = any(w["type"] == "tempo" and abs((w["date"] - a_day).days) == 1 for w in week["workouts"])
+    # a hard run session the day before or after the leg session makes the legs a poor place to add volume
+    has_hard = any(w.get("hard") and abs((w["date"] - a_day).days) == 1 for w in week["workouts"])
     cut = factor < 1.0
     out = []
     taper2 = phase == "Taper" and week["weeks_to_race"] == 1  # final taper week, the one before race week
     if not taper2:
-        reduced_a = has_tempo or cut or phase in ("Cutback", "Taper")
+        reduced_a = has_hard or cut or phase in ("Cutback", "Taper")
         note = ""
         if cut:
             note = "Trimmed because of last week's check-in. Skip the loaded single-leg work if the ankle is sore."
-        elif has_tempo:
-            note = "A tempo run is next to this session, so the volume is kept lower."
+        elif has_hard:
+            note = "A hard session is next to this one, so the volume is kept lower."
         out.append(_session("Strength A: legs and ankle", a_day, A_SLOTS, toks, week,
                             reduced_a, 45, note))
     out.append(_session("Strength B: upper body and trunk", b_day, B_SLOTS, toks, week,
