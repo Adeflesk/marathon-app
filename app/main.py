@@ -1,3 +1,6 @@
+import base64
+import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -21,6 +24,25 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.middleware("http")
+async def basic_auth(request: Request, call_next):
+    """HTTP Basic auth when APP_PASSWORD is set (any username). Unset locally, so dev needs no login."""
+    password = os.environ.get("APP_PASSWORD")
+    if password:
+        given = ""
+        scheme, _, encoded = request.headers.get("authorization", "").partition(" ")
+        if scheme.lower() == "basic":
+            try:
+                given = base64.b64decode(encoded).decode().partition(":")[2]
+            except (ValueError, UnicodeDecodeError):
+                pass
+        if not secrets.compare_digest(given.encode(), password.encode()):
+            return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="marathon"'})
+    return await call_next(request)
+
+
 templates = Jinja2Templates(directory=str(BASE / "templates"))
 templates.env.filters["pace"] = fmt_pace
 templates.env.filters["pace_mi"] = lambda s: fmt_pace(pace_per_mi(s))

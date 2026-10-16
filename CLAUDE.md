@@ -19,6 +19,10 @@ uvicorn app.main:app --reload              # http://localhost:8000 (F5 in VS Cod
 python -m app.pace_engine 10 52:30         # training paces from a 10 km in 52:30
 ```
 
+Deployed to Fly.io (`fly.toml`, `Dockerfile`): `fly deploy`. SQLite and `equipment.json` live on the
+`marathon_data` volume at `/data` (via `DB_PATH`). Setting the `APP_PASSWORD` secret turns on HTTP Basic auth
+(middleware in `main.py`); leave it unset locally. `TZ=Europe/Dublin` so `date.today()` matches the user.
+
 There are no tests, linter or build step configured. To check plan output quickly without the server:
 
 ```bash

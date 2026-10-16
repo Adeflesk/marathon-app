@@ -1,0 +1,9 @@
+.venv/
+.env
+.git/
+data/
+__pycache__/
+.vscode/
+.DS_Store
+Dockerfile
+fly.toml
