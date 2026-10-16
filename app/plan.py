@@ -90,7 +90,8 @@ def weekly_volumes(n: int, s: dict) -> list[dict]:
         else:
             km, lg = 16, 0
         out.append({"km": km, "long": lg, "cutback": k == "cutback", "phase": phase,
-                    "block": block[i], "block_week": block_week[i], "mp_km": 0})
+                    "block": block[i], "block_week": block_week[i], "mp_km": 0,
+                    "taper_week": i - build_end if k == "taper" else None})
 
     # specific block: no two 30 km+ long runs in a row; the easier week is 85% and all easy
     easy_weeks = set()
