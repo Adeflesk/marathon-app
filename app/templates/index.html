@@ -28,7 +28,7 @@
         {% if w.actual_km is not none %}
           {{ w.actual_km }} km
           <div class="mute">{{ w.actual_pace|pace }}/km</div>
-          <div class="{{ 'good' if w.compliance >= 90 else 'warn' if w.compliance >= 70 else 'bad' }}">{{ w.compliance }}%</div>
+          {% if w.compliance is not none %}<div class="{{ 'good' if w.compliance >= 90 else 'warn' if w.compliance >= 70 else 'bad' }}">{{ w.compliance }}%</div>{% endif %}
         {% elif w.past %}<span class="mute">missed</span>
         {% else %}<span class="mute">·</span>{% endif %}
       </td>

@@ -16,6 +16,7 @@ from fit_tool.profile.profile_type import (
 )
 
 from .pace_engine import fmt_pace
+from .plan import _half
 
 # (slower seconds, faster seconds) around the target pace
 EASY_BAND = (30, -30)
@@ -48,7 +49,7 @@ def steps_for(w: dict, paces: dict) -> list:
     if kind == "tempo":
         minutes = w.get("tempo_min", 20)
         tempo_km = minutes * 60 / tempo
-        cool_km = max(1.0, round((w["km"] - 2 - tempo_km) * 2) / 2)  # cool-down absorbs the rest of the planned distance
+        cool_km = max(1.0, _half(w["km"] - 2 - tempo_km))  # cool-down absorbs the rest of the planned distance
         return [
             _step(f"WU {label(easy)}", Intensity.WARMUP, easy, EASY_BAND, km=2),
             _step(f"Tempo {label(tempo)}", Intensity.ACTIVE, tempo, HARD_BAND, minutes=minutes),

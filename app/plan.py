@@ -107,7 +107,7 @@ def generate(s: dict, today: date) -> list[dict]:
         elif long_km:
             mp_km = 0
             if v["phase"] in ("Build", "Peak") and i >= 10:
-                mp_km = min(12, 2 * (i - 9), long_km - 8)
+                mp_km = max(0, min(12, 2 * (i - 9), long_km - 8))
             note = f"Easy, then last {mp_km} km at marathon pace." if mp_km > 0 else "Easy, conversational."
             wk = _w(lday, "long", long_km, "long", note)
             wk["mp_km"] = mp_km
@@ -117,6 +117,7 @@ def generate(s: dict, today: date) -> list[dict]:
             "week": i + 1,
             "start": monday,
             "phase": v["phase"],
+            "weeks_to_race": n - 1 - i,
             "target_km": round(sum(w["km"] for w in workouts), 1),
             "workouts": workouts,
         })

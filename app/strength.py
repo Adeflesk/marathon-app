@@ -216,7 +216,7 @@ def sessions_for_week(week: dict, eq: dict, factor: float = 1.0, days: dict | No
     has_tempo = any(w["type"] == "tempo" and abs((w["date"] - a_day).days) == 1 for w in week["workouts"])
     cut = factor < 1.0
     out = []
-    taper2 = phase == "Taper" and week["target_km"] <= 31
+    taper2 = phase == "Taper" and week["weeks_to_race"] == 1  # final taper week, the one before race week
     if not taper2:
         reduced_a = has_tempo or cut or phase in ("Cutback", "Taper")
         note = ""

@@ -4,6 +4,7 @@ import secrets
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse, Response
@@ -227,7 +228,7 @@ def sync_now():
         msg = f"Sync failed: {e}"
     except Exception as e:  # network errors etc.
         msg = f"Sync failed: {type(e).__name__}: {e}"
-    return RedirectResponse(f"/?msg={msg}", status_code=303)
+    return RedirectResponse(f"/?{urlencode({'msg': msg})}", status_code=303)
 
 
 @app.post("/checkin")

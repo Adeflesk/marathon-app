@@ -29,7 +29,7 @@ def sync(since: date) -> int:
         raise SyncError("SMASHRUN_TOKEN is not set. Copy .env.example to .env and add your token.")
     from_ts = int(time.mktime(datetime(since.year, since.month, since.day).timetuple()))
     headers = {"Authorization": f"Bearer {token}"}
-    saved, page = 0, 0
+    saved, skipped, page, sample_keys = 0, 0, 0, []
     with httpx.Client(timeout=20) as client:
         while True:
             r = client.get(
@@ -49,6 +49,11 @@ def sync(since: date) -> int:
                     km = float(a.get("distance") or 0)
                     if km <= 0:
                         continue
+                    if a.get("activityId") is None:
+                        # a NULL id would get a fresh rowid, so every sync would add the run again
+                        skipped += 1
+                        sample_keys = sample_keys or sorted(a)
+                        continue
                     c.execute(
                         "INSERT OR REPLACE INTO activities(id, date, km, seconds, avg_hr) VALUES (?,?,?,?,?)",
                         (
@@ -63,4 +68,6 @@ def sync(since: date) -> int:
             page += 1
             if page > 20:
                 break
+    if skipped and not saved:
+        raise SyncError(f"Skipped {skipped} runs with no activityId. Fields Smashrun sent: {', '.join(sample_keys[:20])}")
     return saved
