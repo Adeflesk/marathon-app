@@ -34,10 +34,14 @@ DEFAULTS = {
         "long": 390,
         "marathon": 341,
         "tempo": 325,
+        # about 5 km race pace, for VO2 reps and strides
+        "interval": 300,
+        # MP - 9 s, for Hansons-style "strength" reps
+        "subthreshold": 332,
     },
     "base_weekly_km": 25,
     "base_weeks": 3,
-    "peak_weekly_km": 55,
+    "peak_weekly_km": 60,
     "weekly_step_km": 3,
     "max_long_run_km": 32,
     # No running on Tuesday or Thursday. Roles: easy, quality (tempo work later), long.
