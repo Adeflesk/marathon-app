@@ -78,8 +78,8 @@ single pace-range step (easy and long runs).
 2. Copy them into the watch's `GARMIN/NewFiles` folder (if they don't show up, try `GARMIN/Workouts`).
 3. Eject, then on the watch go to Training, Workouts and pick the session.
 
-Pace ranges are set from `settings.json`, so update your paces there first. I couldn't test these files on a
-real watch, so try one first and tell me if the watch rejects it.
+Pace ranges are set from `settings.json`, so update your paces there first. The files have been tried on a
+real Garmin watch and load as workouts.
 
 ## How the plan works
 

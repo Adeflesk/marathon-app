@@ -51,7 +51,7 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   Equipment is reduced to capability tokens; exercise slots pick the first option the tokens allow,
   rotating by week. Prescription depends on phase, check-in factor and whether a tempo run is adjacent.
 - `app/garmin.py` — builds FIT workout files with `fit-tool`; pace targets are speed ranges (m/s) around
-  `settings.paces`. Untested on a real watch.
+  `settings.paces`. Confirmed working on the user's Garmin watch.
 - `app/smashrun.py` — paged `GET /v1/my/activities/search`, upserts into `activities`. Untested against a
   live account; errors surface as `SyncError` messages shown on the dashboard.
 - `app/db.py` — two tables: `activities` (synced runs) and `checkins` (keyed by week number). Schema is
