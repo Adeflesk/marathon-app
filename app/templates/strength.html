@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Strength · week {{ w.week }}</h1>
+<div class="mute">{{ w.phase }} · run target {{ w.target_km }} km ·
+  {% if w.week > 1 %}<a href="/strength?week={{ w.week - 1 }}">previous</a>{% endif %}
+  {% if w.week < n %} · <a href="/strength?week={{ w.week + 1 }}">next</a>{% endif %}
+  · <a href="/equipment">equipment</a></div>
+
+{% if not w.strength %}
+<div class="card">No strength sessions in race week. Short walks and mobility only.</div>
+{% endif %}
+
+{% for sess in w.strength %}
+<div class="card">
+  <h2>{{ sess.name }}</h2>
+  <div class="mute">{{ sess.day }} {{ sess.date.strftime('%d %b') }} · about {{ sess.minutes }} min{% if sess.reduced %} · <span class="warn">reduced volume</span>{% endif %}</div>
+  {% if sess.note %}<div class="banner">{{ sess.note }}</div>{% endif %}
+  <div class="mute" style="margin:8px 0">Warm-up: {{ sess.warmup }}</div>
+  <table>
+    <tr><th>Exercise</th><th>Sets x reps</th></tr>
+    {% for e in sess.exercises %}
+    <tr>
+      <td>{{ e.name }}<div class="mute">{{ e.cue }}</div></td>
+      <td>{{ e.rx }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+
+<p class="mute">RPE 7 means you could have done about 3 more reps. Pick the dumbbell or plate load that gets you there
+  {% if eq_summary.dumbbells %}(dumbbells {{ eq_summary.dumbbells }}){% endif %}.
+  Stop an exercise if the ankle pain goes above 3 out of 10.</p>
+{% endblock %}

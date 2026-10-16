@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Full plan</h1>
+<div class="mute">{{ weeks|length }} weeks to {{ s.race_name }} on {{ s.race_date }}</div>
+<div class="card" style="padding:4px 12px">
+<table>
+  <tr><th>Wk</th><th>Starts</th><th>Phase</th><th>Target</th><th>Done</th><th>Long run</th></tr>
+  {% for w in weeks %}
+  {% set lr = (w.workouts | selectattr('type', 'in', ['long', 'race']) | list) %}
+  <tr class="{{ 'cur' if w.is_current }}">
+    <td>{{ w.week }}</td>
+    <td>{{ w.start.strftime('%d %b') }}</td>
+    <td>{{ w.phase }}</td>
+    <td>{{ w.target_km }} km</td>
+    <td>{% if w.is_past or w.is_current %}{{ w.actual_km }} km{% else %}<span class="mute">·</span>{% endif %}</td>
+    <td>{% if lr %}{{ lr[0].km }} km{% else %}<span class="mute">none</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+<p class="mute">This is a draft shape: about +3 km a week with a cutback every fourth week, peaking near {{ s.peak_weekly_km }} km. Tune the numbers in <code>settings.json</code>.</p>
+{% endblock %}

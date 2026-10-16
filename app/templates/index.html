@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block body %}
+{% if msg %}<div class="banner">{{ msg }}</div>{% endif %}
+
+<div class="card">
+  <div class="mute">{{ s.race_name }} · {{ s.race_date }} · goal {{ goal }}</div>
+  <div class="big">{{ days_left }} days</div>
+  <div class="mute">{{ weeks_left }} weeks to go</div>
+</div>
+
+{% if week %}
+<div class="card">
+  <h2>Week {{ week.week }} · {{ week.phase }}</h2>
+  <div class="mute">Mon {{ week.start.strftime('%d %b') }} · target {{ week.target_km }} km · done {{ week.actual_km }} km</div>
+  {% if week.factor != 1.0 %}
+  <div class="banner">Targets trimmed to {{ (week.factor * 100)|round|int }}% because of last week's check-in.</div>
+  {% endif %}
+  <table>
+    <tr><th>Day</th><th>Session</th><th>Plan</th><th>Done</th></tr>
+    {% for w in week.workouts %}
+    <tr>
+      <td>{{ w.day }}<div class="mute">{{ w.date.strftime('%d %b') }}</div></td>
+      <td><span class="pill">{{ w.type }}</span>
+        <div class="mute">{{ w.note }}</div></td>
+      <td>{{ w.km }} km<div class="mute">{{ paces[w.pace]|pace }}/km · {{ paces[w.pace]|pace_mi }}/mi</div>
+        {% if w.km > 0 %}<div class="mute"><a href="/workout/{{ w.date.isoformat() }}.fit">Garmin .fit</a></div>{% endif %}</td>
+      <td>
+        {% if w.actual_km is not none %}
+          {{ w.actual_km }} km
+          <div class="mute">{{ w.actual_pace|pace }}/km</div>
+          <div class="{{ 'good' if w.compliance >= 90 else 'warn' if w.compliance >= 70 else 'bad' }}">{{ w.compliance }}%</div>
+        {% elif w.past %}<span class="mute">missed</span>
+        {% else %}<span class="mute">·</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="row" style="margin-top:12px; align-items:center">
+    <form method="post" action="/sync"><button type="submit">Sync from Smashrun</button></form>
+    <a href="/workouts/week/{{ week.week }}.zip"><button type="button" class="ghost">Garmin files for the week</button></a>
+  </div>
+</div>
+
+{% if week.strength %}
+<div class="card">
+  <h2>Strength this week</h2>
+  {% for sess in week.strength %}
+  <div>{{ sess.day }} · {{ sess.name }} <span class="mute">({{ sess.minutes }} min{% if sess.reduced %}, reduced{% endif %})</span></div>
+  {% endfor %}
+  <div class="mute"><a href="/strength?week={{ week.week }}">See the sessions</a></div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Weekly check-in</h2>
+  <div class="mute">Shapes next week's targets. Pain 3+ or a hard week trims them; 5+ cuts them by 20%.</div>
+  <form method="post" action="/checkin">
+    <input type="hidden" name="week" value="{{ week.week }}">
+    <div class="row">
+      <div><label>How did it feel? (1 awful, 5 great)</label>
+        <select name="feel">{% for i in [1,2,3,4,5] %}<option value="{{ i }}" {{ 'selected' if i==3 }}>{{ i }}</option>{% endfor %}</select></div>
+      <div><label>Ankle pain (0 none, 10 severe)</label>
+        <select name="pain">{% for i in range(0,11) %}<option value="{{ i }}">{{ i }}</option>{% endfor %}</select></div>
+    </div>
+    <label>Note</label><textarea name="note" rows="2">{{ week.checkin.note if week.checkin else '' }}</textarea>
+    <p><button type="submit">Save check-in</button></p>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Weekly volume</h2>
+  <canvas id="vol" height="180"></canvas>
+</div>
+
+<div class="card">
+  <h2>Paces</h2>
+  <table>
+    {% for k, v in paces.items() %}
+    <tr><td>{{ k|title }}</td><td>{{ v|pace }}/km</td><td class="mute">{{ v|pace_mi }}/mi</td></tr>
+    {% endfor %}
+  </table>
+  <div class="mute">Edit <code>settings.json</code> after a time trial. Marathon pace here is the sub-4:00 target, not your current fitness.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+  const d = {{ chart|tojson }};
+  const css = getComputedStyle(document.documentElement);
+  new Chart(document.getElementById('vol'), {
+    type: 'bar',
+    data: { labels: d.labels, datasets: [
+      { label: 'Planned km', data: d.planned, backgroundColor: css.getPropertyValue('--line').trim() },
+      { label: 'Actual km', data: d.actual, backgroundColor: css.getPropertyValue('--accent').trim() }
+    ]},
+    options: { responsive: true, plugins: { legend: { labels: { color: css.getPropertyValue('--mute').trim() } } },
+      scales: { x: { ticks: { color: css.getPropertyValue('--mute').trim(), maxRotation: 0, autoSkip: true } },
+                y: { ticks: { color: css.getPropertyValue('--mute').trim() } } } }
+  });
+</script>
+{% endblock %}

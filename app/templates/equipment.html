@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Equipment</h1>
+{% if saved %}<div class="banner">Saved. New sessions use this straight away.</div>{% endif %}
+<form method="post" action="/equipment">
+  <div class="card">
+    <h2>Barbell</h2>
+    <label><input type="checkbox" name="barbell" {{ 'checked' if eq.barbell }} style="width:auto"> I have a barbell</label>
+    <div class="row">
+      <div><label>Bar weight (kg)</label><input name="bar_kg" value="{{ eq.bar_kg }}"></div>
+      <div><label>Plates, kg (comma separated, one pair of each)</label><input name="plates_kg" value="{{ eq.plates_kg|join(', ') }}"></div>
+    </div>
+    {% if summary.barbell %}<div class="mute">Loadable: {{ summary.barbell }}</div>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Dumbbells</h2>
+    <label><input type="checkbox" name="dumbbells" {{ 'checked' if eq.dumbbells }} style="width:auto"> I have dumbbells</label>
+    <div class="row">
+      <div><label>Lightest (kg)</label><input name="db_min_kg" value="{{ eq.db_min_kg }}"></div>
+      <div><label>Heaviest (kg)</label><input name="db_max_kg" value="{{ eq.db_max_kg }}"></div>
+      <div><label>Step (kg)</label><input name="db_step_kg" value="{{ eq.db_step_kg }}"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Kettlebells and medicine balls</h2>
+    <div class="row">
+      <div><label>Kettlebells, kg</label><input name="kettlebells_kg" value="{{ eq.kettlebells_kg|join(', ') }}"></div>
+      <div><label>Medicine balls, kg</label><input name="medicine_balls_kg" value="{{ eq.medicine_balls_kg|join(', ') }}"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Other kit</h2>
+    <label><input type="checkbox" name="box" {{ 'checked' if eq.box }} style="width:auto"> Plyo or step box</label>
+    <label><input type="checkbox" name="rings" {{ 'checked' if eq.rings }} style="width:auto"> Gymnastic rings (hung from something solid)</label>
+    <label><input type="checkbox" name="bench" {{ 'checked' if eq.bench }} style="width:auto"> Bench</label>
+    <label><input type="checkbox" name="rack" {{ 'checked' if eq.rack }} style="width:auto"> Squat rack</label>
+    <label><input type="checkbox" name="pullup" {{ 'checked' if eq.pullup }} style="width:auto"> Pull-up bar</label>
+    <label><input type="checkbox" name="bands" {{ 'checked' if eq.bands }} style="width:auto"> Resistance bands</label>
+  </div>
+  <button type="submit">Save equipment</button>
+</form>
+{% endblock %}
