@@ -14,6 +14,7 @@ from . import db, garmin, smashrun, strength
 from .config import load_settings, race_date
 from .pace_engine import fmt_pace, fmt_time, pace_per_mi
 from .plan import _half, feedback_factor, generate
+from .sessions import scale_session
 
 BASE = Path(__file__).resolve().parent
 
@@ -80,12 +81,10 @@ def build_view():
         wk_actual = 0.0
         for wo in w["workouts"]:
             if factor != 1.0 and wo["type"] != "race":
-                wo["km"] = _half(wo["km"] * factor)
-                if wo["type"] == "tempo":
-                    # shorten the tempo too, so 2 km WU + tempo + 1 km CD fits the trimmed distance
-                    fits = int((wo["km"] - 3) * s["paces"]["tempo"] / 60)
-                    wo["tempo_min"] = max(0, min(round(wo["tempo_min"] * factor), fits))
-                    wo["note"] = f"2 km warm-up, {wo['tempo_min']} min at tempo pace, 1 km cool-down."
+                if "steps" in wo:  # fewer reps, so the day, the note and the .fit all agree
+                    scale_session(wo, factor, s["paces"])
+                else:
+                    wo["km"] = _half(wo["km"] * factor)
             a = actual.get(wo["date"].isoformat())
             wo["actual_km"] = round(a["km"], 1) if a else None
             wo["actual_pace"] = (a["seconds"] / a["km"]) if a and a["km"] else None
