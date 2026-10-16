@@ -1,4 +1,5 @@
 """Plan generator: rebuild base, build with cutbacks, long runs from week 4, taper, race."""
+import math
 from datetime import date, timedelta
 
 from .config import next_monday, race_date
@@ -17,40 +18,104 @@ def week_count(s: dict, today: date) -> tuple[date, int]:
     return start, (race_monday - start).days // 7 + 1
 
 
+BLOCK_NAMES = ["specific", "strength", "threshold"]  # counted back from the taper; earlier ones are "general"
+
+
+def _floor_half(x: float) -> float:
+    return math.floor(x * 2) / 2
+
+
 def weekly_volumes(n: int, s: dict) -> list[dict]:
-    """Return [{km, long, cutback, phase}] for each week."""
+    """Return [{km, long, cutback, phase, block, block_week, mp_km}] for each week.
+
+    Build weeks run in blocks of three between cutbacks. Blocks are named from the taper backwards
+    (specific, strength, threshold, then general), so the plan reshapes with the settings.
+    """
     base, base_weeks = s["base_weekly_km"], s["base_weeks"]
     peak, step, max_long = s["peak_weekly_km"], s["weekly_step_km"], s["max_long_run_km"]
-    taper_weeks = 3  # two taper weeks plus race week
-    build_end = n - taper_weeks
-    out: list[dict] = []
-    build_km, last_long = base, 10
+    time_cap = 12600 / s["paces"]["long"]  # 3.5 h at long-run pace
+    build_end = n - 3  # two taper weeks plus race week
+
+    # what each week is; a cutback right before the taper is dropped, the taper is the rest
+    kinds = []
     for i in range(n):
         if i < base_weeks:
-            out.append({"km": base, "long": 10, "cutback": False, "phase": "Rebuild"})
+            kinds.append("rebuild")
         elif i < build_end:
-            since = i - base_weeks
-            if since % 4 == 3:  # every 4th week after the base is a cutback
-                km = round(build_km * 0.8)
-                lg = round(last_long * 0.75)
-                out.append({"km": km, "long": lg, "cutback": True, "phase": "Cutback"})
-            else:
-                build_km = min(build_km + step, peak)
-                last_long = min(last_long + 2 if since else 12, max_long)
-                phase = "Peak" if build_km >= peak else "Build"
-                out.append({"km": build_km, "long": last_long, "cutback": False, "phase": phase})
+            cut = (i - base_weeks) % 4 == 3 and i != build_end - 1
+            kinds.append("cutback" if cut else "build")
         else:
-            k = i - build_end
-            if k == 0:
-                out.append({"km": round(peak * 0.75), "long": 20, "cutback": False, "phase": "Taper"})
-            elif k == 1:
-                out.append({"km": round(peak * 0.55), "long": 14, "cutback": False, "phase": "Taper"})
+            kinds.append("taper" if i < n - 1 else "race")
+
+    runs: list[list[int]] = []
+    for i, k in enumerate(kinds):
+        if k == "build":
+            if runs and runs[-1][-1] == i - 1:
+                runs[-1].append(i)
             else:
-                out.append({"km": 16, "long": 0, "cutback": False, "phase": "Race week"})
-    for w in out:
-        if w["long"]:
-            share = 0.58 if w["phase"] == "Peak" else 0.5
-            w["long"] = min(w["long"], round(w["km"] * share))
+                runs.append([i])
+    block, block_week = [None] * n, [None] * n
+    for r, idxs in enumerate(reversed(runs)):
+        name = BLOCK_NAMES[r] if r < len(BLOCK_NAMES) else "general"
+        for pos, i in enumerate(idxs):
+            block[i], block_week[i] = name, pos
+    for i, k in enumerate(kinds):
+        if k == "cutback":
+            block[i] = block[i - 1]
+    peak_weeks = set(runs[-1]) if runs else set()
+    last_build = runs[-1][-1] if runs else None
+
+    out: list[dict] = []
+    build_km, last_long = base, None
+    for i, k in enumerate(kinds):
+        phase = {"rebuild": "Rebuild", "cutback": "Cutback", "taper": "Taper", "race": "Race week"}.get(k)
+        if k == "rebuild":
+            km, lg = base, 10
+        elif k == "build":
+            build_km = min(build_km + step, peak)
+            km = build_km
+            phase = "Peak" if i in peak_weeks else "Build"
+            share = 0.58 if phase == "Peak" else 0.5
+            lg = _floor_half(min(12 if last_long is None else last_long + 2, max_long, time_cap, share * km))
+            if lg >= 20 and i != last_build:  # spike guard; the final peak run is exempt
+                lg = min(lg, _floor_half(1.1 * max(w["long"] for w in out[-4:])))
+            last_long = lg
+        elif k == "cutback":
+            km, lg = round(build_km * 0.8), round(last_long * 0.75)
+        elif k == "taper":
+            first = i == build_end
+            # from the volume actually reached, so a short plan's taper still falls
+            km = round(build_km * (0.75 if first else 0.55))
+            lg = min(20 if first else 14, round(km * 0.5), last_long or 10)
+        else:
+            km, lg = 16, 0
+        out.append({"km": km, "long": lg, "cutback": k == "cutback", "phase": phase,
+                    "block": block[i], "block_week": block_week[i], "mp_km": 0})
+
+    # specific block: no two 30 km+ long runs in a row; the easier week is 85% and all easy
+    easy_weeks = set()
+    if runs:
+        spec = runs[-1]
+
+        def ease(i: int) -> None:
+            earlier = [out[j]["long"] for j in spec if j < i] or [w["long"] for w in out[max(0, i - 4):i]]
+            out[i]["long"] = round(0.85 * max(earlier))
+            easy_weeks.add(i)
+
+        for i in spec[:-1]:
+            if i > 0 and out[i - 1]["long"] >= 30:
+                ease(i)
+        if len(spec) > 1 and out[spec[-2]]["long"] >= 30:
+            ease(spec[-2])
+
+    # MP finishes every other week from the first strength week: 6, 8, 10, 12 km
+    if runs:
+        start = (runs[-2] if len(runs) > 1 else runs[-1])[0]
+        amount = 6
+        for i in range(start, n):
+            if (i - start) % 2 == 0 and kinds[i] == "build" and i not in easy_weeks:
+                out[i]["mp_km"] = max(0, min(amount, out[i]["long"] - 8))
+                amount = min(12, amount + 2)
     return out
 
 
@@ -105,9 +170,7 @@ def generate(s: dict, today: date) -> list[dict]:
         if is_race_week:
             workouts.append(_w(race, "race", 42.195, "marathon", f"{s['race_name']}. Start at goal pace or a touch slower."))
         elif long_km:
-            mp_km = 0
-            if v["phase"] in ("Build", "Peak") and i >= 10:
-                mp_km = max(0, min(12, 2 * (i - 9), long_km - 8))
+            mp_km = v["mp_km"]
             note = f"Easy, then last {mp_km} km at marathon pace." if mp_km > 0 else "Easy, conversational."
             wk = _w(lday, "long", long_km, "long", note)
             wk["mp_km"] = mp_km
