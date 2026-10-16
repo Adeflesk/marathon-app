@@ -13,7 +13,8 @@ from .plan import _half
 
 HARD_TYPES = {"threshold", "strength", "specific", "mp"}
 CAP_PCT = {"tempo": 0.12, "subthreshold": 0.18, "marathon": 0.18}  # rep km as a share of the week
-LADDER = {"threshold": [3.2, 2.4, 1.6, 1.0], "strength": [3.2, 2.4, 1.6, 1.0], "specific": [5, 4, 3]}
+LADDER = {"threshold": [3.2, 2.4, 1.6, 1.0], "strength": [3.2, 2.4, 1.6, 1.0], "specific": [5, 4, 3, 2],
+          "mp": [1.6, 1.0]}
 WU_KM, CD_KM = 2, 1
 
 # (reps, rep length, recovery) per block week; a longer block repeats the last entry
@@ -146,7 +147,7 @@ def quality_session(v: dict, week_index: int, s: dict, max_km: float) -> dict | 
     if phase == "Rebuild":
         if week_index == 0:
             return None
-        steps = [_st("Easy", 4, "easy", "warmup"), _strides(6 if week_index == 1 else 8), _st("CD", 1, "easy", "cooldown")]
+        steps = [_st("Easy", WU_KM, "easy", "warmup"), _strides(6 if week_index == 1 else 8), _st("CD", CD_KM, "easy", "cooldown")]
         return _session("strides", steps, v, paces)
     if phase == "Taper":
         if v["taper_week"] == 0:
