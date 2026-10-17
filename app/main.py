@@ -14,7 +14,7 @@ from . import db, garmin, smashrun, strength
 from .config import load_settings, race_date
 from .pace_engine import fmt_pace, fmt_time, pace_per_mi
 from .plan import _half, feedback_factor, generate
-from .sessions import scale_session
+from .sessions import flatten, pace_s, scale_session, step_km
 
 BASE = Path(__file__).resolve().parent
 
@@ -46,8 +46,37 @@ async def basic_auth(request: Request, call_next):
 
 
 templates = Jinja2Templates(directory=str(BASE / "templates"))
+
+
+def _effort(pace: float | None, intensity: str, paces: dict) -> str:
+    if intensity == "recovery" or pace is None:
+        return "rest" if intensity == "recovery" else "easy"
+    if pace >= paces["long"]:
+        return "easy"
+    return "hard" if pace < paces["marathon"] - 5 else "steady"
+
+
+def band_segments(w: dict, paces: dict) -> list[dict]:
+    """A workout as pace-band segments: [{km, frac, effort}], effort one of easy/steady/hard/rest."""
+    if "steps" in w:
+        raw = [(step_km(st, paces), _effort(pace_s(st["pace"], paces) if st["pace"] is not None else None,
+                                             st["intensity"], paces)) for st in flatten(w["steps"])]
+    elif w["type"] == "long" and w.get("mp_km"):
+        raw = [(w["km"] - w["mp_km"], "easy"), (w["mp_km"], "steady")]
+    elif w["type"] == "race":
+        raw = [(w["km"], "steady")]
+    else:
+        raw = [(w["km"], "easy")]
+    total = sum(km for km, _ in raw) or 1
+    return [{"km": km, "frac": km / total, "effort": e} for km, e in raw]
+
+
+def fmt_km(km: float) -> str:
+    return f"{km:.1f}".rstrip("0").rstrip(".")
 templates.env.filters["pace"] = fmt_pace
 templates.env.filters["pace_mi"] = lambda s: fmt_pace(pace_per_mi(s))
+templates.env.filters["km"] = fmt_km
+templates.env.globals["band"] = band_segments
 
 
 def today() -> date:
@@ -109,10 +138,14 @@ def dashboard(request: Request, msg: str = ""):
     current = next((w for w in weeks if w["is_current"]), None)
     upcoming = weeks[0] if t < weeks[0]["start"] else current
     days_left = (race_date(s) - t).days
-    chart = {
-        "labels": [f"W{w['week']}" for w in weeks],
+    # the next run from today on, and any strength session today
+    next_run = next((wo for w in weeks for wo in w["workouts"] if wo["date"] >= t and wo["km"] > 0), None)
+    strength_today = next((x for x in (upcoming or {}).get("strength", []) if x["date"] == t), None)
+    profile = {
         "planned": [w["target_km"] for w in weeks],
         "actual": [w["actual_km"] if (w["is_past"] or w["is_current"]) else None for w in weeks],
+        "current": next((i for i, w in enumerate(weeks) if w["is_current"]), None),
+        "max": max(w["target_km"] for w in weeks),
     }
     return templates.TemplateResponse(
         request,
@@ -122,7 +155,11 @@ def dashboard(request: Request, msg: str = ""):
             "week": upcoming,
             "days_left": days_left,
             "weeks_left": days_left // 7,
-            "chart": chart,
+            "profile": profile,
+            "today": t,
+            "race_day": race_date(s),
+            "next_run": next_run,
+            "strength_today": strength_today,
             "msg": msg,
             "paces": s["paces"],
             "goal": s["goal_time"],

@@ -162,6 +162,7 @@ def generate(s: dict, today: date) -> list[dict]:
             "week": i + 1,
             "start": monday,
             "phase": v["phase"],
+            "block": v["block"],
             "weeks_to_race": n - 1 - i,
             "target_km": round(sum(w["km"] for w in workouts), 1),
             "workouts": workouts,

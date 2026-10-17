@@ -1,22 +1,58 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}Plan{% endblock %}
+{% block head %}
+<style>
+  .intro { padding-top: 20px; }
+  .intro .display { font-size: clamp(2.75rem, 13vw, 3.5rem); }
+  .group h2 { margin-bottom: 4px; }
+  .weeks { list-style: none; margin: 10px 0 0; padding: 0; }
+  .weeks li { display: grid; grid-template-columns: 2.75rem 1fr 4.5rem; gap: 2px 10px; align-items: center; padding: 9px 0; }
+  .weeks .n { font-stretch: 62%; font-weight: 800; font-size: 1.625rem; line-height: 1; }
+  .weeks .n small { display: block; font-stretch: 100%; font-weight: 400; font-size: .75rem; color: var(--mute); margin-top: 2px; }
+  .weeks .sep { flex: 0 0 3px; }
+  .weeks .km { text-align: right; font-weight: 650; line-height: 1.2; }
+  .weeks .km small { display: block; font-weight: 400; font-size: .8125rem; color: var(--mute); }
+  .weeks .tag { font-size: .8125rem; color: var(--mute); }
+  .weeks li.now { background: var(--surface); box-shadow: -16px 0 0 var(--surface), 16px 0 0 var(--surface); }
+  .weeks li.now .tag { color: var(--ink); font-weight: 600; }
+  .weeks li.past { opacity: .62; }
+</style>
+{% endblock %}
 {% block body %}
-<h1>Full plan</h1>
-<div class="mute">{{ weeks|length }} weeks to {{ s.race_name }} on {{ s.race_date }}</div>
-<div class="card" style="padding:4px 12px">
-<table>
-  <tr><th>Wk</th><th>Starts</th><th>Phase</th><th>Target</th><th>Done</th><th>Long run</th></tr>
-  {% for w in weeks %}
-  {% set lr = (w.workouts | selectattr('type', 'in', ['long', 'race']) | list) %}
-  <tr class="{{ 'cur' if w.is_current }}">
-    <td>{{ w.week }}</td>
-    <td>{{ w.start.strftime('%d %b') }}</td>
-    <td>{{ w.phase }}</td>
-    <td>{{ w.target_km }} km</td>
-    <td>{% if w.is_past or w.is_current %}{{ w.actual_km }} km{% else %}<span class="mute">·</span>{% endif %}</td>
-    <td>{% if lr %}{{ lr[0].km }} km{% else %}<span class="mute">none</span>{% endif %}</td>
-  </tr>
-  {% endfor %}
-</table>
-</div>
-<p class="mute">This is a draft shape: about +3 km a week with a cutback every fourth week, peaking near {{ s.peak_weekly_km }} km. Tune the numbers in <code>settings.json</code>.</p>
+<section class="intro stack">
+  <h1 class="display">{{ weeks|length }} weeks to Barcelona</h1>
+  <p class="mute">Each bar is a week of running, drawn to scale: easy in green, marathon pace in yellow, hard in red. The peak is {{ s.peak_weekly_km }} km.</p>
+</section>
+
+{% set maxkm = weeks|map(attribute='target_km')|max %}
+{% set ns = namespace(key=None) %}
+{% for w in weeks %}
+  {% set key = ui.BLOCK_TITLES.get(w.block) if w.block else w.phase %}
+  {% if key != ns.key %}
+    {% if not loop.first %}</ol></section>{% endif %}
+    {% set ns.key = key %}
+<section class="group" aria-label="{{ key }}">
+  <h2>{{ key }}</h2>
+  <ol class="weeks">
+  {% endif %}
+    <li class="{{ 'now' if w.is_current }} {{ 'past' if w.is_past }}">
+      <span class="n">{{ w.week }}<small>{{ w.start.strftime('%-d %b') }}</small></span>
+      <span>
+        <span style="display:block; width: {{ (100 * w.target_km / maxkm)|round(1) }}%">
+          <span class="band mini" role="img" aria-label="Week {{ w.week }}: {{ w.target_km|km }} km">
+            {%- for x in w.workouts if x.km > 0 %}{% if not loop.first %}<b class="sep"></b>{% endif %}{% for sg in band(x, s.paces) %}<i class="e-{{ sg.effort }}" style="flex-grow: {{ '%.3f'|format(sg.km) }}"></i>{% endfor %}{% endfor -%}
+          </span>
+        </span>
+        <span class="tag">
+          {%- if w.is_current %}This week. {% endif -%}
+          {%- if w.phase == 'Cutback' %}Cutback week. {% endif -%}
+          {%- set lr = w.workouts|selectattr('type', 'in', ['long', 'race'])|list -%}
+          {%- if lr %}{% if lr[0].type == 'race' %}Race day{% else %}Long run {{ lr[0].km|km }} km{% if lr[0].mp_km %}, last {{ lr[0].mp_km|km }} at marathon pace{% endif %}{% endif %}{% endif -%}
+        </span>
+      </span>
+      <span class="km">{{ w.target_km|km }} km{% if w.is_past or w.is_current %}<small>{{ w.actual_km|km }} done</small>{% endif %}</span>
+    </li>
+  {% if loop.last %}</ol></section>{% endif %}
+{% endfor %}
 {% endblock %}
