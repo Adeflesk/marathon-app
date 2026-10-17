@@ -101,7 +101,8 @@ The shape follows what coaches and the research agree on. The full write-up is i
   | 12-14 | Reps just quicker than marathon pace |
   | 16-18 | Long reps at marathon pace with a 1 km float |
   | Cutback weeks | A smaller version of the block's session |
-  | Taper and race week | A short marathon-pace session |
+  | Taper | Sub-threshold reps, then a short marathon-pace session |
+  | Race week | 3 × 1 km at marathon pace, unless it's the day before the race |
 
   The work part of a session is capped at about 12% of the week (threshold pace) or 18% (marathon-ish
   pace). In lower-volume weeks it gets fewer or shorter reps, and it grows as the weeks do.

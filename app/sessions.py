@@ -78,18 +78,23 @@ def _main(kind: str, reps: int, length, rec, paces: dict) -> list:
         rep = _st("MP", length, paces["marathon"] - 3, "active", note="Goal pace, smooth.")
         return [rep, _st("Float", rec, paces["marathon"] / 0.95, "active", note="Steady, not a jog."), dict(rep)]
     pace = "subthreshold" if kind == "strength" else "marathon"
+    note = "Just quicker than goal pace." if kind == "strength" else "At goal pace."
     rec_step = _st("Jog", rec, None, "recovery", "seconds" if kind == "mp" and rec >= 60 else "km")
-    return [{"repeat": reps, "steps": [_st("Rep", length, pace, "active", note="Just quicker than goal pace."), rec_step]}]
+    return [{"repeat": reps, "steps": [_st("Rep", length, pace, "active", note=note), rec_step]}]
 
 
 def _wrap(main: list, wu: float = WU_KM, cd: float = CD_KM) -> list:
     return [_st("WU", wu, "easy", "warmup")] + main + [_st("CD", cd, "easy", "cooldown")]
 
 
-def _fit(kind: str, reps: int, length, rec, week_km: float, max_km: float, paces: dict) -> list:
+def _fit(kind: str, reps: int, length, rec, week_km: float, max_km: float, paces: dict,
+         work_limit: float | None = None) -> list:
     """The biggest version (fewer reps, never below 2, or shorter reps down the ladder) within the
-    work cap and max_km. If nothing fits, the smallest version; generate makes room for it."""
+    work cap, work_limit and max_km (give or take half a rounding step). If nothing fits, the
+    smallest version; generate makes room for it."""
     cap = CAP_PCT.get(TYPE_PACE[kind], 1.0) * week_km
+    if work_limit is not None:
+        cap = min(cap, work_limit)
     ladder = LADDER.get(kind, [])
     lengths = ladder[ladder.index(length):] if length in ladder else [length]
     rep_counts = [reps] if kind == "specific" else range(reps, 1, -1)
@@ -100,7 +105,7 @@ def _fit(kind: str, reps: int, length, rec, week_km: float, max_km: float, paces
             work = work_km(steps, paces)
             if smallest is None or work < smallest[0]:
                 smallest = (work, steps)
-            if work <= cap + 1e-9 and session_km(steps, paces) <= max_km + 1e-9 and (best is None or work > best[0] + 1e-9):
+            if work <= cap + 1e-9 and session_km(steps, paces) <= max_km + 0.25 and (best is None or work > best[0] + 1e-9):
                 best = (work, steps)
     return (best or smallest)[1]
 
@@ -147,8 +152,11 @@ def strides_session(v: dict, s: dict, n: int = 6) -> dict:
     return _session("strides", steps, v, s["paces"])
 
 
-def quality_session(v: dict, week_index: int, s: dict, max_km: float) -> dict | None:
-    """The quality day for one week of weekly_volumes(), or None (first Rebuild week)."""
+def quality_session(v: dict, week_index: int, s: dict, max_km: float,
+                    block_start_work: float | None = None) -> dict | None:
+    """The quality day for one week of weekly_volumes(), or None (first Rebuild week).
+
+    block_start_work is the work km of this block's first session; a cutback stays below 70% of it."""
     paces = s["paces"]
     phase = v["phase"]
     if phase == "Rebuild":
@@ -169,12 +177,14 @@ def quality_session(v: dict, week_index: int, s: dict, max_km: float) -> dict | 
         reps = 5 if block == "general" else max(2, round(reps * 0.65))
     else:
         reps, length, rec = MENU[block][min(v["block_week"], len(MENU[block]) - 1)]
-    return _session(kind, _fit(kind, reps, length, rec, v["km"], max_km, paces), v, paces)
+    limit = 0.7 * block_start_work if v["cutback"] and block_start_work else None
+    return _session(kind, _fit(kind, reps, length, rec, v["km"], max_km, paces, limit), v, paces)
 
 
 def scale_session(workout: dict, factor: float, paces: dict) -> None:
     """Check-in trim: fewer reps (rounded, never below 2). Where reps can't drop (already 2, or the
-    specific session's two long reps), the reps get one rung shorter instead. km and note follow."""
+    specific session's two long reps), the reps get one rung shorter instead. Cool-down beyond its
+    minimum shrinks by the factor too. km and note follow."""
     ladder = LADDER.get(workout["type"], [])
 
     def shorten(step: dict) -> bool:
@@ -194,5 +204,8 @@ def scale_session(workout: dict, factor: float, paces: dict) -> None:
         for st in workout["steps"]:
             if st["label"] == "MP":
                 shorten(st)
+    cd = workout["steps"][-1]
+    if cd["intensity"] == "cooldown" and cd.get("km", 0) > CD_KM:  # the cool-down's fill shrinks too
+        cd["km"] = max(CD_KM, _half(cd["km"] * factor))
     workout["km"] = _half(session_km(workout["steps"], paces))
     workout["note"] = describe(workout["steps"], paces)

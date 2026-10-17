@@ -100,3 +100,10 @@ def test_fit_keeps_most_work(settings):
     # wk 14 (52 km): 3 × 3.2 km is over the 18% cap; 3 × 2.4 km keeps more work than 2 × 3.2 km
     _, ss = plan_sessions(settings)
     assert "3 × 2.4 km" in ss[13]["note"]
+
+
+def test_mp_reps_note_says_goal_pace(settings):
+    _, ss = plan_sessions(settings)
+    for s in (ss[19], ss[20]):  # taper week 2 and race week
+        rep = next(st for st in s["steps"] if "repeat" in st)["steps"][0]
+        assert rep["note"] == "At goal pace."
