@@ -116,7 +116,7 @@ def weekly_volumes(n: int, s: dict) -> list[dict]:
         mp_weeks = [i for i in range(start, last_build + 1)
                     if (last_build - i) % 2 == 0 and kinds[i] == "build" and i not in easy_weeks]
         for k, i in enumerate(mp_weeks):
-            out[i]["mp_km"] = max(0, min(6 + 2 * k, 12, out[i]["long"] - 8))
+            out[i]["mp_km"] = max(0, min(6 + 2 * k, 12, out[i]["long"] - 8, _floor_half(0.4 * out[i]["long"])))
     return out
 
 
@@ -130,6 +130,12 @@ def generate(s: dict, today: date) -> list[dict]:
     weights = {d: (0.4 if run_days[d] == "quality" else 0.3) for d in mid_days}
     total_w = sum(weights.values())
     race = race_date(s)
+    block_work: dict = {}  # work km of each block's first session, for its cutback
+
+    def _work_km(sess):
+        from .sessions import work_km
+        return work_km(sess["steps"], s["paces"])
+
     weeks = []
     for i, v in enumerate(vols):
         monday = start + timedelta(weeks=i)
@@ -139,7 +145,12 @@ def generate(s: dict, today: date) -> list[dict]:
         workouts = []
         days = [d for d in mid_days if not (is_race_week and monday + timedelta(days=DAYS.index(d)) >= race)]
         quality_day = next((d for d in days if run_days[d] == "quality"), None)
-        km_by_day, sess = _size_mid_week(v, i, s, days, quality_day, weights, total_w, rest, is_race_week)
+        if is_race_week and quality_day and (race - (monday + timedelta(days=DAYS.index(quality_day)))).days <= 1:
+            quality_day = None  # no sharpener the day before the race
+        km_by_day, sess = _size_mid_week(v, i, s, days, quality_day, weights, total_w, rest, is_race_week,
+                                         block_work.get(v["block"]))
+        if sess and v["block_week"] == 0:
+            block_work[v["block"]] = _work_km(sess)
         for d in days:
             day = monday + timedelta(days=DAYS.index(d))
             if d == quality_day and sess:
@@ -153,7 +164,7 @@ def generate(s: dict, today: date) -> list[dict]:
             workouts.append(_w(race, "race", 42.195, "marathon", f"{s['race_name']}. Start at goal pace or a touch slower."))
         elif long_km:
             mp_km = v["mp_km"]
-            note = f"Easy, then last {mp_km} km at marathon pace." if mp_km > 0 else "Easy, conversational."
+            note = f"Easy, then last {mp_km:g} km at marathon pace." if mp_km > 0 else "Easy, conversational."
             wk = _w(lday, "long", long_km, "long", note)
             wk["mp_km"] = mp_km
             workouts.append(wk)
@@ -170,7 +181,7 @@ def generate(s: dict, today: date) -> list[dict]:
     return weeks
 
 
-def _size_mid_week(v, i, s, days, quality_day, weights, total_w, rest, is_race_week):
+def _size_mid_week(v, i, s, days, quality_day, weights, total_w, rest, is_race_week, block_start_work=None):
     """Km for each mid-week run plus the quality session (or None).
 
     The session decides the quality day's km, its cool-down growing to fill the day's normal share.
@@ -198,7 +209,7 @@ def _size_mid_week(v, i, s, days, quality_day, weights, total_w, rest, is_race_w
     sess = None
     if quality_day:
         max_km = rest - sum(min(floor, share[d]) for d in easy_days)
-        sess = quality_session(v, i, s, max_km)
+        sess = quality_session(v, i, s, max_km, block_start_work)
         # no room even for the smallest session (very short plans): strides, else an easy run
         for fallback in (lambda: strides_session(v, s), lambda: None):
             if sess is None or session_km(sess["steps"], paces) <= max_km + 0.25:
