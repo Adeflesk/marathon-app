@@ -3,38 +3,113 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Marathon plan</title>
+<meta name="theme-color" content="#EEF2F1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F2433" media="(prefers-color-scheme: dark)">
+<title>{% block title %}This week{% endblock %} | Barcelona build</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#f7f7f5; --card:#fff; --ink:#1c1c1a; --mute:#6b6b66; --line:#e4e4df; --accent:#1d6fd6; --good:#2e8b57; --warn:#c77d00; --bad:#c0392b; }
+  :root {
+    --bg: #EEF2F1;        /* sea mist */
+    --surface: #F8FAF9;
+    --ink: #0E2A3B;       /* Mediterranean navy */
+    --mute: #4F6672;
+    --line: #C9D5D3;
+    --easy: #6FA894;      /* sea green */
+    --steady: #E2B33C;    /* senyera yellow */
+    --hard: #C8372D;      /* senyera red */
+    --on-ink: #EEF2F1;
+    --good: #2F7D5B; --warn: #9A6B00; --bad: #B3322A;
+  }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#141413; --card:#1e1e1c; --ink:#ececE8; --mute:#9a9a94; --line:#2f2f2c; --accent:#5aa2f5; --good:#4fc08a; --warn:#e0a030; --bad:#e8695b; }
+    :root {
+      --bg: #0F2433; --surface: #15304A; --ink: #E6EEF0; --mute: #9DB2BC; --line: #2A4558;
+      --easy: #7DBBA5; --steady: #E8BE4F; --hard: #E05A4F; --on-ink: #0F2433;
+      --good: #6FCB9C; --warn: #E8BE4F; --bad: #F07B70;
+    }
   }
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; }
-  main { max-width:760px; margin:0 auto; padding:16px; }
-  nav { display:flex; gap:16px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--card); }
-  nav a { color:var(--ink); text-decoration:none; font-weight:600; }
-  nav a.dim { color:var(--mute); font-weight:400; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin:12px 0; }
-  h1,h2 { margin:0 0 8px; } h1 { font-size:1.4rem; } h2 { font-size:1.1rem; }
-  .big { font-size:2rem; font-weight:700; }
-  .mute { color:var(--mute); font-size:.9rem; }
-  table { width:100%; border-collapse:collapse; }
-  th,td { text-align:left; padding:8px 4px; border-bottom:1px solid var(--line); vertical-align:top; font-size:.95rem; }
-  th { color:var(--mute); font-weight:500; font-size:.8rem; text-transform:uppercase; letter-spacing:.04em; }
-  .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:.8rem; border:1px solid var(--line); }
-  .good { color:var(--good); } .warn { color:var(--warn); } .bad { color:var(--bad); }
-  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 14px; font-size:1rem; cursor:pointer; }
-  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); }
-  label { display:block; margin:10px 0 4px; font-size:.9rem; color:var(--mute); }
-  input, select, textarea { width:100%; padding:9px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); font-size:1rem; }
-  .row { display:flex; gap:12px; flex-wrap:wrap; } .row > * { flex:1; min-width:120px; }
-  .banner { background:var(--card); border-left:4px solid var(--accent); padding:10px 14px; border-radius:8px; margin:12px 0; }
-  .cur td { background:color-mix(in srgb, var(--accent) 8%, transparent); }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 400 1rem/1.5 Archivo, system-ui, sans-serif; font-variant-numeric: tabular-nums;
+  }
+  a { color: inherit; text-underline-offset: .2em; text-decoration-thickness: 1px; }
+  :focus-visible { outline: 3px solid var(--steady); outline-offset: 2px; border-radius: 2px; }
+
+  /* type scale: 13 / 16 / 20 / 26 / 44 / 76 */
+  .display { font-stretch: 62%; font-weight: 800; line-height: .88; letter-spacing: -.01em; margin: 0; }
+  h1, h2, h3 { margin: 0; }
+  h2 { font-stretch: 75%; font-weight: 700; font-size: 1.625rem; line-height: 1.1; }
+  h3 { font-size: 1.25rem; font-weight: 600; line-height: 1.2; }
+  .small { font-size: .8125rem; }
+  .mute { color: var(--mute); }
+  p { margin: 0; }
+
+  .site { display: flex; flex-wrap: wrap; gap: 4px 20px; align-items: baseline;
+          max-width: 46rem; margin: 0 auto; padding: 14px 16px 0; }
+  .site a { text-decoration: none; color: var(--mute); padding: 6px 0; }
+  .site a[aria-current="page"] { color: var(--ink); font-weight: 650; box-shadow: inset 0 -2px var(--ink); }
+  main { max-width: 46rem; margin: 0 auto; padding: 8px 16px 64px; }
+  section { padding: 28px 0; border-top: 1px solid var(--line); }
+  section:first-child { border-top: 0; }
+  .stack > * + * { margin-top: 12px; }
+
+  /* the pace band: a run split into its segments, sized by distance, coloured by effort */
+  .band { display: flex; gap: 2px; height: 30px; border-radius: 15px; overflow: hidden; background: var(--bg); }
+  .band > i { display: block; min-width: 2px; flex: 0 1 0; }
+  .band.mini { height: 10px; border-radius: 5px; gap: 1px; }
+  .e-easy { background: var(--easy); }
+  .e-steady { background: var(--steady); }
+  .e-hard { background: var(--hard); }
+  .e-rest { background: repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 6px); }
+  .key { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .8125rem; color: var(--mute); }
+  .key span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 5px;
+                      margin-right: 6px; vertical-align: -1px; }
+  .key .k-easy::before { background: var(--easy); }
+  .key .k-steady::before { background: var(--steady); }
+  .key .k-hard::before { background: var(--hard); }
+  .key .k-rest::before { background: repeating-linear-gradient(135deg, var(--mute) 0 2px, transparent 2px 4px); }
+
+  .button { display: inline-block; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
+            background: var(--ink); color: var(--on-ink); border: 2px solid var(--ink); border-radius: 6px;
+            padding: 10px 16px; }
+  .button.quiet { background: transparent; color: var(--ink); }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .actions form { margin: 0; }
+
+  .notice { padding: 12px 14px; border-left: 4px solid var(--steady); background: var(--surface); }
+  .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; font-size: .8125rem; color: var(--mute); }
+  td.num, th.num { text-align: right; padding-right: 0; }
+
+  label { display: block; font-weight: 600; margin: 0 0 6px; }
+  input[type=text], input:not([type]), select, textarea {
+    width: 100%; font: inherit; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; }
+  .check { display: flex; gap: 10px; align-items: center; font-weight: 400; margin: 8px 0; }
+  .check input { width: 20px; height: 20px; accent-color: var(--ink); }
+  .fields { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .band.reveal { animation: reveal .7s cubic-bezier(.2,.7,.2,1) both; }
+    @keyframes reveal { from { clip-path: inset(0 100% 0 0 round 15px); } to { clip-path: inset(0 0 0 0 round 15px); } }
+  }
 </style>
+{% block head %}{% endblock %}
 </head>
 <body>
-<nav><a href="/">This week</a><a href="/plan" class="dim">Full plan</a><a href="/strength" class="dim">Strength</a><a href="/equipment" class="dim">Equipment</a></nav>
+{% set path = request.url.path %}
+<nav class="site" aria-label="Main">
+  <a href="/" {{ 'aria-current="page"'|safe if path == '/' }}>This week</a>
+  <a href="/plan" {{ 'aria-current="page"'|safe if path == '/plan' }}>Plan</a>
+  <a href="/strength" {{ 'aria-current="page"'|safe if path == '/strength' }}>Strength</a>
+  <a href="/equipment" {{ 'aria-current="page"'|safe if path == '/equipment' }}>Equipment</a>
+</nav>
 <main>{% block body %}{% endblock %}</main>
 </body>
 </html>

@@ -1,34 +1,44 @@
 {% extends "base.html" %}
+{% block title %}Strength{% endblock %}
+{% block head %}
+<style>
+  .intro { padding-top: 20px; }
+  .intro .display { font-size: clamp(2.75rem, 13vw, 3.5rem); }
+  .pager { display: flex; gap: 18px; flex-wrap: wrap; }
+  .ex td:first-child { font-weight: 600; }
+  .ex td:first-child small { display: block; font-weight: 400; color: var(--mute); font-size: .875rem; margin-top: 2px; }
+  .ex td:last-child { white-space: nowrap; }
+</style>
+{% endblock %}
 {% block body %}
-<h1>Strength · week {{ w.week }}</h1>
-<div class="mute">{{ w.phase }} · run target {{ w.target_km }} km ·
-  {% if w.week > 1 %}<a href="/strength?week={{ w.week - 1 }}">previous</a>{% endif %}
-  {% if w.week < n %} · <a href="/strength?week={{ w.week + 1 }}">next</a>{% endif %}
-  · <a href="/equipment">equipment</a></div>
+<section class="intro stack">
+  <h1 class="display">Strength, week {{ w.week }}</h1>
+  <p class="mute">{{ w.phase }} week, {{ w.target_km|km }} km of running.</p>
+  <p class="pager">
+    {% if w.week > 1 %}<a href="/strength?week={{ w.week - 1 }}">Week {{ w.week - 1 }}</a>{% endif %}
+    {% if w.week < n %}<a href="/strength?week={{ w.week + 1 }}">Week {{ w.week + 1 }}</a>{% endif %}
+    <a href="/equipment">Your equipment</a>
+  </p>
+</section>
 
 {% if not w.strength %}
-<div class="card">No strength sessions in race week. Short walks and mobility only.</div>
+<section><p>No strength sessions in race week. Short walks and mobility only.</p></section>
 {% endif %}
 
 {% for sess in w.strength %}
-<div class="card">
-  <h2>{{ sess.name }}</h2>
-  <div class="mute">{{ sess.day }} {{ sess.date.strftime('%d %b') }} · about {{ sess.minutes }} min{% if sess.reduced %} · <span class="warn">reduced volume</span>{% endif %}</div>
-  {% if sess.note %}<div class="banner">{{ sess.note }}</div>{% endif %}
-  <div class="mute" style="margin:8px 0">Warm-up: {{ sess.warmup }}</div>
-  <table>
-    <tr><th>Exercise</th><th>Sets x reps</th></tr>
+<section class="stack" aria-labelledby="s{{ loop.index }}">
+  <h2 id="s{{ loop.index }}">{{ sess.name }}</h2>
+  <p class="mute">{{ sess.date.strftime('%A %-d %B') }}, about {{ sess.minutes }} minutes{% if sess.reduced %}, <span class="warn">reduced volume</span>{% endif %}.</p>
+  {% if sess.note %}<p class="notice">{{ sess.note }}</p>{% endif %}
+  <p><strong>Warm-up:</strong> {{ sess.warmup }}</p>
+  <table class="ex">
+    <tr><th>Exercise</th><th>Sets and reps</th></tr>
     {% for e in sess.exercises %}
-    <tr>
-      <td>{{ e.name }}<div class="mute">{{ e.cue }}</div></td>
-      <td>{{ e.rx }}</td>
-    </tr>
+    <tr><td>{{ e.name }}<small>{{ e.cue }}</small></td><td>{{ e.rx }}</td></tr>
     {% endfor %}
   </table>
-</div>
+</section>
 {% endfor %}
 
-<p class="mute">RPE 7 means you could have done about 3 more reps. Pick the dumbbell or plate load that gets you there
-  {% if eq_summary.dumbbells %}(dumbbells {{ eq_summary.dumbbells }}){% endif %}.
-  Stop an exercise if the ankle pain goes above 3 out of 10.</p>
+<section><p class="mute small">RPE 7 means you could have done about 3 more reps. Pick the dumbbell or plate load that gets you there{% if eq_summary.dumbbells %} (dumbbells {{ eq_summary.dumbbells }}){% endif %}. Stop an exercise if the ankle pain goes above 3 out of 10.</p></section>
 {% endblock %}

@@ -38,7 +38,8 @@ def step_km(step: dict, paces: dict) -> float:
     return step["km"] if "km" in step else step["seconds"] / pace_s(step["pace"], paces)
 
 
-def _flat(steps: list) -> list:
+def flatten(steps: list) -> list:
+    """Steps with repeat blocks expanded."""
     out = []
     for st in steps:
         out.extend(st["steps"] * st["repeat"] if "repeat" in st else [st])
@@ -46,11 +47,11 @@ def _flat(steps: list) -> list:
 
 
 def session_km(steps: list, paces: dict) -> float:
-    return sum(step_km(st, paces) for st in _flat(steps))
+    return sum(step_km(st, paces) for st in flatten(steps))
 
 
 def work_km(steps: list, paces: dict) -> float:
-    return sum(step_km(st, paces) for st in _flat(steps) if st["intensity"] == "active")
+    return sum(step_km(st, paces) for st in flatten(steps) if st["intensity"] == "active")
 
 
 def _st(label, amount, pace, intensity, unit="km", note=None):

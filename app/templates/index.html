@@ -1,103 +1,168 @@
 {% extends "base.html" %}
-{% block body %}
-{% if msg %}<div class="banner">{{ msg }}</div>{% endif %}
+{% import "_ui.html" as ui with context %}
+{% block head %}
+<style>
+  .hero { padding-top: 20px; }
+  .hero .when { font-weight: 600; }
+  .hero .display { font-size: clamp(3.5rem, 18vw, 4.75rem); margin-top: 6px; }
+  .hero .kind { font-stretch: 75%; font-weight: 700; font-size: 1.625rem; line-height: 1.1; }
+  .hero .band { height: 44px; border-radius: 22px; margin-top: 18px; }
+  .hero .note { font-size: 1.125rem; max-width: 34em; }
+  .done-line { font-weight: 600; }
 
-<div class="card">
-  <div class="mute">{{ s.race_name }} · {{ s.race_date }} · goal {{ goal }}</div>
-  <div class="big">{{ days_left }} days</div>
-  <div class="mute">{{ weeks_left }} weeks to go</div>
-</div>
+  .days { list-style: none; margin: 14px 0 0; padding: 0; }
+  .days li { display: grid; grid-template-columns: 4.25rem 1fr auto; gap: 4px 12px; align-items: center;
+             padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .days li:last-child { border-bottom: 0; }
+  .days .d { font-weight: 650; line-height: 1.15; }
+  .days .d small { display: block; font-weight: 400; color: var(--mute); font-size: .8125rem; }
+  .days .what { min-width: 0; }
+  .days .what .band { margin-top: 6px; }
+  .days .km { text-align: right; font-weight: 650; }
+  .days .km small { display: block; font-weight: 400; font-size: .8125rem; }
+  .days li.is-today .d { box-shadow: inset 3px 0 var(--ink); padding-left: 8px; }
+
+  .scale { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 4px; border: 0; padding: 0; margin: 0; }
+  .scale legend { font-weight: 600; margin-bottom: 8px; padding: 0; grid-column: 1 / -1; }
+  .scale input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .scale label { margin: 0; font-weight: 600; height: 2.75rem; display: grid; place-items: center;
+                 border: 1.5px solid var(--line); border-radius: 6px; background: var(--surface); cursor: pointer; }
+  .scale input:checked + label { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
+  .scale input:focus-visible + label { outline: 3px solid var(--steady); outline-offset: 2px; }
+  .ends { display: flex; justify-content: space-between; font-size: .8125rem; color: var(--mute); margin-top: 4px; }
+  .checkin .stack > * + * { margin-top: 20px; }
+
+  .profile svg { display: block; width: 100%; height: auto; margin-top: 14px; overflow: visible; }
+  .profile .planned { fill: color-mix(in srgb, var(--easy) 35%, transparent); stroke: var(--easy); stroke-width: 1.5; }
+  .profile .actual { fill: none; stroke: var(--ink); stroke-width: 2.5; stroke-linejoin: round; }
+  .profile .here { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
+  .profile text { fill: var(--mute); font-size: 11px; font-family: Archivo, sans-serif; }
+
+  .paces td:first-child { font-weight: 600; }
+</style>
+{% endblock %}
+{% block body %}
+{% if msg %}<p class="notice" role="status">{{ msg }}</p>{% endif %}
+
+{% if next_run %}
+<section class="hero stack" aria-labelledby="today-h">
+  <p class="when">{% if next_run.date == today %}Today, {% else %}Next run, {% endif %}{{ next_run.date.strftime('%A %-d %B') }}</p>
+  <h1 id="today-h">
+    <span class="display" style="display:block">{{ next_run.km|km }} km</span>
+    <span class="kind">{{ ui.TYPE_NAMES.get(next_run.type, next_run.type) }}</span>
+  </h1>
+  {{ ui.band_bar(next_run, paces, "reveal") }}
+  {{ ui.key_for(next_run, paces) }}
+  <p class="note">{{ next_run.note }}</p>
+  {% if next_run.actual_km is not none %}
+  <p class="done-line">Done: {{ next_run.actual_km|km }} km at {{ next_run.actual_pace|pace }}/km{% if next_run.compliance is not none %}, {{ next_run.compliance }}% of plan{% endif %}.</p>
+  {% endif %}
+  <div class="actions">
+    <a class="button" href="/workout/{{ next_run.date.isoformat() }}.fit">Download for the watch</a>
+  </div>
+  {% if strength_today %}<p>Also today: <a href="/strength?week={{ week.week }}">{{ strength_today.name }}</a>, about {{ strength_today.minutes }} minutes.</p>{% endif %}
+</section>
+{% else %}
+<section class="hero"><h1 class="display" style="font-size:3.5rem">Race done.</h1><p class="note">No more runs in the plan.</p></section>
+{% endif %}
 
 {% if week %}
-<div class="card">
-  <h2>Week {{ week.week }} · {{ week.phase }}</h2>
-  <div class="mute">Mon {{ week.start.strftime('%d %b') }} · target {{ week.target_km }} km · done {{ week.actual_km }} km</div>
-  {% if week.factor != 1.0 %}
-  <div class="banner">Targets trimmed to {{ (week.factor * 100)|round|int }}% because of last week's check-in.</div>
-  {% endif %}
-  <table>
-    <tr><th>Day</th><th>Session</th><th>Plan</th><th>Done</th></tr>
+<section aria-labelledby="week-h">
+  <h2 id="week-h">Week {{ week.week }}, {{ week.phase|lower if week.phase in ('Rebuild', 'Cutback', 'Taper', 'Race week') else ui.BLOCK_NAMES.get(week.block, week.phase|lower) }}</h2>
+  <p class="mute">{{ week.target_km|km }} km planned, {{ week.actual_km|km }} km done. Week of {{ week.start.strftime('%-d %B') }}.</p>
+  {% if week.factor != 1.0 %}<p class="notice" style="margin-top:12px">Trimmed to {{ (week.factor * 100)|round|int }}% after last week's check-in.</p>{% endif %}
+  {% set longest = week.workouts|map(attribute='km')|max %}
+  <ul class="days">
     {% for w in week.workouts %}
-    <tr>
-      <td>{{ w.day }}<div class="mute">{{ w.date.strftime('%d %b') }}</div></td>
-      <td><span class="pill">{{ w.type }}</span>
-        <div class="mute">{{ w.note }}</div></td>
-      <td>{{ w.km }} km<div class="mute">{{ paces[w.pace]|pace }}/km · {{ paces[w.pace]|pace_mi }}/mi</div>
-        {% if w.km > 0 %}<div class="mute"><a href="/workout/{{ w.date.isoformat() }}.fit">Garmin .fit</a></div>{% endif %}</td>
-      <td>
-        {% if w.actual_km is not none %}
-          {{ w.actual_km }} km
-          <div class="mute">{{ w.actual_pace|pace }}/km</div>
-          {% if w.compliance is not none %}<div class="{{ 'good' if w.compliance >= 90 else 'warn' if w.compliance >= 70 else 'bad' }}">{{ w.compliance }}%</div>{% endif %}
-        {% elif w.past %}<span class="mute">missed</span>
-        {% else %}<span class="mute">·</span>{% endif %}
-      </td>
-    </tr>
+    <li class="{{ 'is-today' if w.date == today }}">
+      <span class="d">{{ w.date.strftime('%a') }}<small>{{ w.date.strftime('%-d %b') }}</small></span>
+      <span class="what">
+        {{ ui.TYPE_NAMES.get(w.type, w.type) }}
+        <span style="display:block; width: {{ (100 * w.km / longest)|round(1) if longest else 0 }}%">{{ ui.band_bar(w, paces, "mini") }}</span>
+      </span>
+      <span class="km">{{ w.km|km }} km
+        <small>
+        {%- if w.actual_km is not none %}<span class="{{ 'good' if w.compliance is not none and w.compliance >= 90 else 'warn' if w.compliance is not none and w.compliance >= 70 else 'bad' }}">{{ w.actual_km|km }} done</span>
+        {%- elif w.past %}<span class="mute">missed</span>
+        {%- elif w.km > 0 %}<a href="/workout/{{ w.date.isoformat() }}.fit">.fit file</a>{% endif -%}
+        </small>
+      </span>
+    </li>
     {% endfor %}
-  </table>
-  <div class="row" style="margin-top:12px; align-items:center">
-    <form method="post" action="/sync"><button type="submit">Sync from Smashrun</button></form>
-    <a href="/workouts/week/{{ week.week }}.zip"><button type="button" class="ghost">Garmin files for the week</button></a>
+  </ul>
+  {% if week.strength %}
+  <p class="mute" style="margin-top:12px">Strength on {% for x in week.strength %}{{ x.date.strftime('%A') }}{{ ' and ' if not loop.last }}{% endfor %}. <a href="/strength?week={{ week.week }}">See the sessions</a>.</p>
+  {% endif %}
+  <div class="actions" style="margin-top:18px">
+    <form method="post" action="/sync"><button class="button" type="submit">Sync from Smashrun</button></form>
+    <a class="button quiet" href="/workouts/week/{{ week.week }}.zip">Download the week's watch files</a>
   </div>
-</div>
+</section>
 
-{% if week.strength %}
-<div class="card">
-  <h2>Strength this week</h2>
-  {% for sess in week.strength %}
-  <div>{{ sess.day }} · {{ sess.name }} <span class="mute">({{ sess.minutes }} min{% if sess.reduced %}, reduced{% endif %})</span></div>
-  {% endfor %}
-  <div class="mute"><a href="/strength?week={{ week.week }}">See the sessions</a></div>
-</div>
-{% endif %}
-
-<div class="card">
-  <h2>Weekly check-in</h2>
-  <div class="mute">Shapes next week's targets. Pain 3+ or a hard week trims them; 5+ cuts them by 20%.</div>
-  <form method="post" action="/checkin">
+<section class="checkin" aria-labelledby="checkin-h">
+  <h2 id="checkin-h">How was the week?</h2>
+  <p class="mute">Your answers shape next week. Ankle pain of 3 or a rough week trims it by 10%, pain of 5 or more by 20%.</p>
+  <form method="post" action="/checkin" class="stack" style="margin-top:16px">
     <input type="hidden" name="week" value="{{ week.week }}">
-    <div class="row">
-      <div><label>How did it feel? (1 awful, 5 great)</label>
-        {% set feel = week.checkin.feel if week.checkin else 3 %}
-        <select name="feel">{% for i in [1,2,3,4,5] %}<option value="{{ i }}" {{ 'selected' if i==feel }}>{{ i }}</option>{% endfor %}</select></div>
-      <div><label>Ankle pain (0 none, 10 severe)</label>
-        {% set pain = week.checkin.pain if week.checkin else 0 %}
-        <select name="pain">{% for i in range(0,11) %}<option value="{{ i }}" {{ 'selected' if i==pain }}>{{ i }}</option>{% endfor %}</select></div>
+    {% set feel = week.checkin.feel if week.checkin else 3 %}
+    <div>
+      <fieldset class="scale" style="--n: 5; max-width: 16rem">
+        <legend>How did it feel?</legend>
+        {% for i in range(1, 6) %}
+        <input type="radio" name="feel" id="feel{{ i }}" value="{{ i }}" {{ 'checked' if i == feel }}><label for="feel{{ i }}">{{ i }}</label>
+        {% endfor %}
+      </fieldset>
+      <p class="ends" style="max-width: 16rem"><span>Awful</span><span>Great</span></p>
     </div>
-    <label>Note</label><textarea name="note" rows="2">{{ week.checkin.note if week.checkin else '' }}</textarea>
-    <p><button type="submit">Save check-in</button></p>
+    {% set pain = week.checkin.pain if week.checkin else 0 %}
+    <div>
+      <fieldset class="scale" style="--n: 11">
+        <legend>Ankle pain</legend>
+        {% for i in range(0, 11) %}
+        <input type="radio" name="pain" id="pain{{ i }}" value="{{ i }}" {{ 'checked' if i == pain }}><label for="pain{{ i }}">{{ i }}</label>
+        {% endfor %}
+      </fieldset>
+      <p class="ends"><span>None</span><span>Severe</span></p>
+    </div>
+    <div>
+      <label for="note">Anything else?</label>
+      <textarea id="note" name="note" rows="2">{{ week.checkin.note if week.checkin else '' }}</textarea>
+    </div>
+    <div><button class="button" type="submit">Save check-in</button></div>
   </form>
-</div>
+</section>
 {% endif %}
 
-<div class="card">
-  <h2>Weekly volume</h2>
-  <canvas id="vol" height="180"></canvas>
-</div>
+<section class="profile" aria-labelledby="profile-h">
+  <h2 id="profile-h">The road to Barcelona</h2>
+  <p class="mute">{{ s.race_name }} on {{ race_day.strftime('%A %-d %B %Y') }}, {{ days_left }} days away. Goal {{ goal }}.</p>
+  {% set n = profile.planned|length %}
+  {% set W = 320 %}{% set H = 90 %}
+  {% set step = W / (n - 1) if n > 1 else W %}
+  <svg viewBox="0 -14 {{ W }} {{ H + 30 }}" role="img" aria-label="Weekly km across the plan: {{ profile.planned|map('km')|join(', ') }}">
+    <polygon class="planned" points="0,{{ H }} {% for v in profile.planned %}{{ (loop.index0 * step)|round(1) }},{{ (H - H * v / profile.max)|round(1) }} {% endfor %}{{ W }},{{ H }}"/>
+    {% set pts = [] %}
+    {% set ns = namespace(started=false) %}
+    {% for v in profile.actual %}{% if v %}{% set ns.started = true %}{% endif %}{% if v is not none and ns.started %}{% set _ = pts.append(((loop.index0 * step)|round(1))|string ~ ',' ~ ((H - H * v / profile.max)|round(1))|string) %}{% endif %}{% endfor %}
+    {% if pts|length > 1 %}<polyline class="actual" points="{{ pts|join(' ') }}"/>{% endif %}
+    {% if profile.current is not none %}
+      {% set x = (profile.current * step)|round(1) %}
+      <line class="here" x1="{{ x }}" x2="{{ x }}" y1="-6" y2="{{ H }}"/>
+      <text x="{{ x }}" y="-8" text-anchor="{{ 'start' if profile.current < n / 2 else 'end' }}">You are here</text>
+    {% endif %}
+    <text x="0" y="{{ H + 14 }}">Week 1</text>
+    <text x="{{ W }}" y="{{ H + 14 }}" text-anchor="end">Race</text>
+  </svg>
+</section>
 
-<div class="card">
-  <h2>Paces</h2>
-  <table>
+<section aria-labelledby="paces-h">
+  <h2 id="paces-h">Your paces</h2>
+  <table class="paces" style="margin-top:12px">
+    {% set PACE_NAMES = {"easy": "Easy", "long": "Long run", "marathon": "Marathon", "subthreshold": "Sub-threshold", "tempo": "Threshold", "interval": "Interval"} %}
     {% for k, v in paces.items() %}
-    <tr><td>{{ k|title }}</td><td>{{ v|pace }}/km</td><td class="mute">{{ v|pace_mi }}/mi</td></tr>
+    <tr><td>{{ PACE_NAMES.get(k, k|title) }}</td><td class="num">{{ v|pace }}/km</td><td class="num mute">{{ v|pace_mi }}/mi</td></tr>
     {% endfor %}
   </table>
-  <div class="mute">Edit <code>settings.json</code> after a time trial. Marathon pace here is the sub-4:00 target, not your current fitness.</div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<script>
-  const d = {{ chart|tojson }};
-  const css = getComputedStyle(document.documentElement);
-  new Chart(document.getElementById('vol'), {
-    type: 'bar',
-    data: { labels: d.labels, datasets: [
-      { label: 'Planned km', data: d.planned, backgroundColor: css.getPropertyValue('--line').trim() },
-      { label: 'Actual km', data: d.actual, backgroundColor: css.getPropertyValue('--accent').trim() }
-    ]},
-    options: { responsive: true, plugins: { legend: { labels: { color: css.getPropertyValue('--mute').trim() } } },
-      scales: { x: { ticks: { color: css.getPropertyValue('--mute').trim(), maxRotation: 0, autoSkip: true } },
-                y: { ticks: { color: css.getPropertyValue('--mute').trim() } } } }
-  });
-</script>
+  <p class="mute small" style="margin-top:10px">Change these in <code>settings.json</code> after a time trial. Marathon pace is the sub-4 target, not your current fitness.</p>
+</section>
 {% endblock %}

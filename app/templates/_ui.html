@@ -1,0 +1,25 @@
+{# Shared pieces: the pace band and plain names for workout types and blocks. #}
+{% set TYPE_NAMES = {
+  "easy": "Easy run", "strides": "Easy run with strides", "fartlek": "Fartlek", "threshold": "Threshold reps",
+  "strength": "Sub-threshold reps", "specific": "Marathon-pace blocks", "mp": "Marathon-pace reps",
+  "tempo": "Tempo", "long": "Long run", "race": "Race"} %}
+{% set BLOCK_NAMES = {"general": "speed block", "threshold": "threshold block", "strength": "sub-threshold block",
+  "specific": "marathon-specific block"} %}
+{% set BLOCK_TITLES = {"general": "Speed block", "threshold": "Threshold block", "strength": "Sub-threshold block",
+  "specific": "Peak: marathon-specific block"} %}
+
+{% macro band_bar(w, paces, extra="") -%}
+<div class="band {{ extra }}" role="img" aria-label="{{ w.note }}">
+  {%- for s in band(w, paces) %}<i class="e-{{ s.effort }}" style="flex-grow: {{ '%.4f'|format(s.frac) }}"></i>{% endfor -%}
+</div>
+{%- endmacro %}
+
+{% macro key_for(w, paces) -%}
+{% set efforts = band(w, paces) | map(attribute="effort") | unique | list %}
+<p class="key">
+  {%- if "easy" in efforts %}<span class="k-easy">Easy</span>{% endif %}
+  {%- if "steady" in efforts %}<span class="k-steady">Marathon pace</span>{% endif %}
+  {%- if "hard" in efforts %}<span class="k-hard">Hard</span>{% endif %}
+  {%- if "rest" in efforts %}<span class="k-rest">Jog recovery</span>{% endif %}
+</p>
+{%- endmacro %}
