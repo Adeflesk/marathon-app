@@ -19,9 +19,16 @@ syncs runs from Smashrun and compares them with the plan.
 
 ## Smashrun token
 
-Smashrun's API Explorer gives you an access token for your own account. Put it in `.env` as
-`SMASHRUN_TOKEN=...`. The sync code has not been tested against a live account. If the sync button
-reports an error, the message says what Smashrun returned.
+Open https://api.smashrun.com/v1/explorer, type `client` in the box at the top, click Connect and copy
+the token. Put it in `.env` as `SMASHRUN_TOKEN=...` (on Fly: `fly secrets set SMASHRUN_TOKEN=...`).
+It lasts about 60 days; when sync says the token was rejected, get a new one the same way.
+
+## After a run
+
+Sync from Smashrun once the run is there. Each new run's km splits and laps come with it, and This week
+shows a review of your last run: easy runs quicker than easy get flagged, long runs show whether the
+marathon-pace finish was on pace, and sessions run from the watch workout are checked rep by rep.
+Heart-rate drift (second half against first) under 5% means the effort stayed steady.
 
 ## Days
 

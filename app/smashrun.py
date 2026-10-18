@@ -1,9 +1,11 @@
 """Smashrun sync. Reads SMASHRUN_TOKEN from the environment (.env).
 
-Endpoint and field names follow Smashrun's public API as I understand it
-(GET /v1/my/activities/search with fromDate as unix seconds). They have NOT been
-tested against your account, so if a sync fails, the error text tells you what to fix.
+GET /v1/my/activities/search (fromDate in local unix seconds) for run summaries, then for each new
+run GET /v1/my/activities/{id} (laps) and /splits/km, stored once in run_details. Field names were
+checked against the user's account in October 2026. A personal token comes from the API Explorer
+with client id "client" and lasts about 60 days; user tokens allow 250 requests an hour.
 """
+import json
 import os
 import time
 from datetime import date, datetime
@@ -23,13 +25,36 @@ def _to_date(value) -> str:
     return str(value)[:10]
 
 
+MAX_DETAILS_PER_SYNC = 40  # two calls each; keeps a first sync well inside 250 requests an hour
+
+
+def _get(client, url, headers):
+    r = client.get(url, headers=headers)
+    if r.status_code == 401:
+        raise SyncError("Smashrun rejected the token (401). Generate a fresh one in the API Explorer.")
+    return r
+
+
+def _fetch_details(client, headers, ids: list[int]) -> None:
+    """Km splits and laps for runs that don't have them yet. A run that fails is retried next sync."""
+    missing = [i for i in ids if i not in db.run_details(ids)][:MAX_DETAILS_PER_SYNC]
+    for i in missing:
+        detail = _get(client, f"{BASE}/my/activities/{i}", headers)
+        splits = _get(client, f"{BASE}/my/activities/{i}/splits/km", headers)
+        if detail.status_code >= 400 or splits.status_code >= 400:
+            continue
+        with db.conn() as c:
+            c.execute("INSERT OR REPLACE INTO run_details(id, splits, laps) VALUES (?,?,?)",
+                      (i, json.dumps(splits.json()), json.dumps(detail.json().get("laps") or [])))
+
+
 def sync(since: date) -> int:
     token = os.environ.get("SMASHRUN_TOKEN", "").strip()
     if not token:
         raise SyncError("SMASHRUN_TOKEN is not set. Copy .env.example to .env and add your token.")
     from_ts = int(time.mktime(datetime(since.year, since.month, since.day).timetuple()))
     headers = {"Authorization": f"Bearer {token}"}
-    saved, skipped, page, sample_keys = 0, 0, 0, []
+    saved, skipped, page, sample_keys, ids = 0, 0, 0, [], []
     with httpx.Client(timeout=20) as client:
         while True:
             r = client.get(
@@ -65,9 +90,11 @@ def sync(since: date) -> int:
                         ),
                     )
                     saved += 1
+                    ids.append(a["activityId"])
             page += 1
             if page > 20:
                 break
+        _fetch_details(client, headers, ids)
     if skipped and not saved:
         raise SyncError(f"Skipped {skipped} runs with no activityId. Fields Smashrun sent: {', '.join(sample_keys[:20])}")
     return saved

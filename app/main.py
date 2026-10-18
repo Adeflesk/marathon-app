@@ -10,7 +10,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from . import db, garmin, smashrun, strength
+from . import db, garmin, review, smashrun, strength
 from .config import load_settings, race_date
 from .pace_engine import fmt_pace, fmt_time, pace_per_mi
 from .plan import _half, feedback_factor, generate
@@ -86,12 +86,14 @@ def today() -> date:
 def actual_by_date() -> dict[str, dict]:
     out: dict[str, dict] = {}
     with db.conn() as c:
-        for r in c.execute("SELECT date, km, seconds, avg_hr FROM activities"):
-            d = out.setdefault(r["date"], {"km": 0.0, "seconds": 0, "hr": []})
+        for r in c.execute("SELECT id, date, km, seconds, avg_hr FROM activities"):
+            d = out.setdefault(r["date"], {"km": 0.0, "seconds": 0, "hr": [], "main": None})
             d["km"] += r["km"]
             d["seconds"] += r["seconds"]
             if r["avg_hr"]:
                 d["hr"].append(r["avg_hr"])
+            if d["main"] is None or r["km"] > d["main"]["km"]:  # the day's longest run gets the review
+                d["main"] = {"id": r["id"], "km": r["km"], "seconds": r["seconds"]}
     return out
 
 
@@ -99,6 +101,7 @@ def build_view():
     s = load_settings()
     weeks = generate(s, today())
     actual = actual_by_date()
+    details = db.run_details([a["main"]["id"] for a in actual.values()])
     eq = strength.load_equipment()
     with db.conn() as c:
         checkins = {r["week"]: dict(r) for r in c.execute("SELECT * FROM checkins")}
@@ -119,6 +122,8 @@ def build_view():
             wo["actual_pace"] = (a["seconds"] / a["km"]) if a and a["km"] else None
             wo["compliance"] = round(100 * a["km"] / wo["km"]) if a and wo["km"] else None
             wo["past"] = wo["date"] < t
+            detail = details.get(a["main"]["id"]) if a else None
+            wo["review"] = review.review(wo, a["main"], detail, s["paces"]) if detail else None
         w["target_km"] = round(sum(wo["km"] for wo in w["workouts"]), 1)
         for i in range(7):
             d = (w["start"] + timedelta(days=i)).isoformat()
@@ -139,7 +144,10 @@ def dashboard(request: Request, msg: str = ""):
     upcoming = weeks[0] if t < weeks[0]["start"] else current
     days_left = (race_date(s) - t).days
     # the next run from today on, and any strength session today
-    next_run = next((wo for w in weeks for wo in w["workouts"] if wo["date"] >= t and wo["km"] > 0), None)
+    next_run = next((wo for w in weeks for wo in w["workouts"]
+                     if wo["km"] > 0 and (wo["date"] > t or (wo["date"] == t and wo["actual_km"] is None))), None)
+    done = [wo for w in weeks for wo in w["workouts"] if wo.get("review") and wo["date"] <= t]
+    last_run = done[-1] if done else None
     strength_today = next((x for x in (upcoming or {}).get("strength", []) if x["date"] == t), None)
     profile = {
         "planned": [w["target_km"] for w in weeks],
@@ -159,6 +167,7 @@ def dashboard(request: Request, msg: str = ""):
             "today": t,
             "race_day": race_date(s),
             "next_run": next_run,
+            "last_run": last_run,
             "strength_today": strength_today,
             "msg": msg,
             "paces": s["paces"],

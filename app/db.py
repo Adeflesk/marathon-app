@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 from pathlib import Path
@@ -24,6 +25,11 @@ def init() -> None:
                 avg_hr INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_act_date ON activities(date);
+            CREATE TABLE IF NOT EXISTS run_details (
+                id INTEGER PRIMARY KEY,
+                splits TEXT NOT NULL,
+                laps TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS checkins (
                 week INTEGER PRIMARY KEY,
                 feel INTEGER NOT NULL,
@@ -33,3 +39,12 @@ def init() -> None:
             );
             """
         )
+
+
+def run_details(ids: list[int]) -> dict[int, dict]:
+    """Stored Smashrun km splits and laps by activity id: {id: {"splits": [...], "laps": [...]}}."""
+    if not ids:
+        return {}
+    with conn() as c:
+        rows = c.execute(f"SELECT id, splits, laps FROM run_details WHERE id IN ({','.join('?' * len(ids))})", ids)
+        return {r["id"]: {"splits": json.loads(r["splits"]), "laps": json.loads(r["laps"])} for r in rows}
