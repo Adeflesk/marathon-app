@@ -90,7 +90,7 @@ The research found five gaps:
      the gates in the report's "Hop stages" table. The stage sets Thursday's hop exercises and contact count.
    - **Step-back signals** (report's list) drop one stage: a logged ankle pain ≥3 or higher than last time, a
      next-morning reaction note, or a falling calf-raise count.
-8. **Ankle flag** *(one-tap check, user's decision)*:
+7. **Ankle flag** *(one-tap check, user's decision)*:
    - **Morning check:** on the morning after a session with hops or calf work, This week shows "Ankle this
      morning: fine / worse than usual". "Worse" is stored in a new table (see Data).
    - **What raises the flag:** "worse", a logged `ankle_pain` of 3 or more (or higher than the previous log of
@@ -100,7 +100,7 @@ The research found five gaps:
      - no load increase on ankle, calf or hop items;
      - Thursday −1 set and RPE ≤7;
      - a "worse" morning drops the hop stage by one and holds the balance stage.
-7. **History:** the Strength page shows each exercise's log history (date, weight, reps, rating), so the user
+8. **History:** the Strength page shows each exercise's log history (date, weight, reps, rating), so the user
    can see progress.
 
 ## Non-goals
@@ -152,7 +152,7 @@ The research found five gaps:
 
 - **Hard Wednesday:** the Wednesday run review's `bad` verdict lightens Thursday. No per-run rating is added.
 - **Taper week 2:** no leg session (current behaviour). Tuesday's light session and the ankle snacks continue.
-- **Ankle flag:** a one-tap next-morning check (goal 8).
+- **Ankle flag:** a one-tap next-morning check (goal 7).
 - **Layout:** the checklist card (layout A), with daily ankle snacks on their own card.
 
 ## How to check it
