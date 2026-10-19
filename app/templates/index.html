@@ -36,9 +36,23 @@
   .profile .planned { fill: color-mix(in srgb, var(--easy) 35%, transparent); stroke: var(--easy); stroke-width: 1.5; }
   .profile .actual { fill: none; stroke: var(--ink); stroke-width: 2.5; stroke-linejoin: round; }
   .profile .here { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
-  .profile text { fill: var(--mute); font-size: 11px; font-family: Archivo, sans-serif; }
+  .profile .planned, .profile .actual { vector-effect: non-scaling-stroke; }
+  .profile .axis { position: relative; display: flex; justify-content: space-between; margin-top: 6px; }
+  .profile .here-label { position: absolute; top: 0; transform: translateX(-50%); color: var(--ink); white-space: nowrap; }
 
   .paces td:first-child { font-weight: 600; }
+  .review { border-left: 4px solid var(--line); padding-left: 14px; }
+  .review.v-good { border-color: var(--good); }
+  .review.v-warn { border-color: var(--warn); }
+  .review.v-bad { border-color: var(--bad); }
+  .review .headline { font-size: 1.125rem; font-weight: 600; }
+  .reps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .reps li { display: grid; grid-template-columns: 3.5rem 1fr auto; gap: 8px; align-items: baseline; }
+  .reps .tick-on { color: var(--good); } .reps .tick-fast, .reps .tick-slow { color: var(--warn); }
+  details summary { cursor: pointer; font-weight: 600; }
+  .splits td, .splits th { padding: 6px 8px 6px 0; }
+  .days .verdict { grid-column: 2 / -1; font-size: .8125rem; color: var(--mute); }
+  .days .verdict.v-warn, .days .verdict.v-bad { color: var(--warn); }
 </style>
 {% endblock %}
 {% block body %}
@@ -66,6 +80,38 @@
 <section class="hero"><h1 class="display" style="font-size:3.5rem">Race done.</h1><p class="note">No more runs in the plan.</p></section>
 {% endif %}
 
+{% if last_run %}
+{% set r = last_run.review %}
+<section class="stack" aria-labelledby="last-h">
+  <h2 id="last-h">Your last run</h2>
+  <p class="mute">{{ last_run.date.strftime('%A %-d %B') }}: {{ ui.TYPE_NAMES.get(last_run.type, last_run.type)|lower }}, {{ last_run.actual_km|km }} km at {{ last_run.actual_pace|pace }}/km.</p>
+  <div class="review v-{{ r.verdict }} stack">
+    <p class="headline">{{ r.headline }}</p>
+    {% if r.reps %}
+    <ol class="reps" aria-label="Reps">
+      {% for x in r.reps %}
+      <li><span>Rep {{ x.n }}</span><span>{{ x.actual|pace }}/km <span class="mute small">target {{ x.target|pace }}</span></span>
+        <span class="tick-{{ x.verdict }}">{{ {'on': 'On pace', 'fast': 'Quick', 'slow': 'Slow'}[x.verdict] }}</span></li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+    {% if r.note %}<p class="mute">{{ r.note }}</p>{% endif %}
+    {% if r.drift is not none %}<p class="mute small">Heart-rate drift {{ r.drift }}% (second half against first; under 5% is steady).</p>{% endif %}
+  </div>
+  {% if r.splits %}
+  <details>
+    <summary>Km splits</summary>
+    <table class="splits" style="margin-top:8px">
+      <tr><th>Km</th><th class="num">Pace</th><th class="num">Heart rate</th></tr>
+      {% for x in r.splits %}
+      <tr><td>{{ loop.index if x.km >= 0.95 else (x.km|round(2)) }}</td><td class="num">{{ x.pace|pace }}/km</td><td class="num">{{ x.hr or '' }}</td></tr>
+      {% endfor %}
+    </table>
+  </details>
+  {% endif %}
+</section>
+{% endif %}
+
 {% if week %}
 <section aria-labelledby="week-h">
   <h2 id="week-h">Week {{ week.week }}, {{ week.phase|lower if week.phase in ('Rebuild', 'Cutback', 'Taper', 'Race week') else ui.BLOCK_NAMES.get(week.block, week.phase|lower) }}</h2>
@@ -87,6 +133,7 @@
         {%- elif w.km > 0 %}<a href="/workout/{{ w.date.isoformat() }}.fit">.fit file</a>{% endif -%}
         </small>
       </span>
+      {% if w.review %}<span class="verdict v-{{ w.review.verdict }}">{{ w.review.headline }}</span>{% endif %}
     </li>
     {% endfor %}
   </ul>
@@ -139,7 +186,7 @@
   {% set n = profile.planned|length %}
   {% set W = 320 %}{% set H = 90 %}
   {% set step = W / (n - 1) if n > 1 else W %}
-  <svg viewBox="0 -14 {{ W }} {{ H + 30 }}" role="img" aria-label="Weekly km across the plan: {{ profile.planned|map('km')|join(', ') }}">
+  <svg viewBox="0 -8 {{ W }} {{ H + 8 }}" preserveAspectRatio="none" style="height: 7.5rem" role="img" aria-label="Weekly km across the plan: {{ profile.planned|map('km')|join(', ') }}">
     <polygon class="planned" points="0,{{ H }} {% for v in profile.planned %}{{ (loop.index0 * step)|round(1) }},{{ (H - H * v / profile.max)|round(1) }} {% endfor %}{{ W }},{{ H }}"/>
     {% set pts = [] %}
     {% set ns = namespace(started=false) %}
@@ -147,12 +194,14 @@
     {% if pts|length > 1 %}<polyline class="actual" points="{{ pts|join(' ') }}"/>{% endif %}
     {% if profile.current is not none %}
       {% set x = (profile.current * step)|round(1) %}
-      <line class="here" x1="{{ x }}" x2="{{ x }}" y1="-6" y2="{{ H }}"/>
-      <text x="{{ x }}" y="-8" text-anchor="{{ 'start' if profile.current < n / 2 else 'end' }}">You are here</text>
+      <line class="here" x1="{{ x }}" x2="{{ x }}" y1="-6" y2="{{ H }}" vector-effect="non-scaling-stroke"/>
     {% endif %}
-    <text x="0" y="{{ H + 14 }}">Week 1</text>
-    <text x="{{ W }}" y="{{ H + 14 }}" text-anchor="end">Race</text>
   </svg>
+  <p class="axis small mute">
+    <span>Week 1</span>
+    {% if profile.current is not none %}<span class="here-label" style="left: {{ (100 * profile.current / (n - 1))|round(1) }}%">You are here</span>{% endif %}
+    <span>Race</span>
+  </p>
 </section>
 
 <section aria-labelledby="paces-h">

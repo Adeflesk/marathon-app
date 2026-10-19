@@ -71,9 +71,17 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   `settings.paces`. Repeat blocks become a `REPEAT_UNTIL_STEPS_CMPLT` step after their steps, pointing back
   to the block's first step index, mirroring Garmin Connect's own files (samples in `samples/garmin/`,
   untracked). Single-step and tempo files are confirmed on the user's watch.
-- `app/smashrun.py` — paged `GET /v1/my/activities/search`, upserts into `activities`. Untested against a
-  live account; errors surface as `SyncError` messages shown on the dashboard.
-- `app/db.py` — two tables: `activities` (synced runs) and `checkins` (keyed by week number). Schema is
+- `app/smashrun.py` — paged `GET /v1/my/activities/search`, upserts into `activities`, then fetches laps
+  (`/my/activities/{id}`) and km splits (`/splits/km`) once per new run into `run_details` (max 40 runs
+  per sync). Checked against the user's account. The token is a personal API Explorer token (client id
+  `client`, ~60 days, 250 requests/hour); errors surface as `SyncError` messages on the dashboard.
+- `app/review.py` — pure post-run review, recomputed per request like the plan: per-km pace and HR from
+  splits, heart-rate drift (second half against first, first km excluded), easy runs quicker than MP + 20 s
+  flagged, the long run's MP finish checked from its last splits, and structured sessions checked rep by
+  rep from Garmin `work` laps (within 10 s/km is on pace). `build_view` attaches `review` to each planned
+  workout whose day has a synced run with details (the day's longest run).
+- `app/db.py` — three tables: `activities` (synced runs), `run_details` (JSON km splits and laps per run)
+  and `checkins` (keyed by week number). Schema is
   `CREATE IF NOT EXISTS` on startup; there are no migrations. `DB_PATH` env var overrides `data/marathon.db`.
 
 ## Conventions
