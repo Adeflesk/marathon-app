@@ -130,7 +130,9 @@ def build_view():
             if d in actual:
                 wk_actual += actual[d]["km"]
         w["actual_km"] = round(wk_actual, 1)
-        w["strength"] = strength.sessions_for_week(w, eq, factor, s["strength_days"])
+        ctx = {"factor": factor, "wed_bad": False, "ankle_flag": False, "hop_stage": None,
+               "balance_stage": 0, "restart": False, "days": s["strength_days"]}
+        w["strength"] = strength.sessions_for_week(w, eq, ctx)
         w["is_current"] = w["start"] <= t < w["start"] + timedelta(days=7)
         w["is_past"] = w["start"] + timedelta(days=7) <= t
     return s, weeks
