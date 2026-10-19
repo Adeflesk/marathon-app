@@ -10,10 +10,10 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from . import db, garmin, review, smashrun, strength
+from . import ankle, db, garmin, progression, review, smashrun, strength
 from .config import load_settings, race_date
 from .pace_engine import fmt_pace, fmt_time, pace_per_mi
-from .plan import _half, feedback_factor, generate
+from .plan import DAYS, _half, feedback_factor, generate
 from .sessions import flatten, pace_s, scale_session, step_km
 
 BASE = Path(__file__).resolve().parent
@@ -106,6 +106,7 @@ def build_view():
     with db.conn() as c:
         checkins = {r["week"]: dict(r) for r in c.execute("SELECT * FROM checkins")}
     t = today()
+    st = ankle_state(t, weeks, list(checkins.values()))
     for w in weeks:
         factor = feedback_factor(checkins.get(w["week"] - 1))
         w["factor"] = factor
@@ -130,12 +131,62 @@ def build_view():
             if d in actual:
                 wk_actual += actual[d]["km"]
         w["actual_km"] = round(wk_actual, 1)
-        ctx = {"factor": factor, "wed_bad": False, "ankle_flag": False, "hop_stage": None,
-               "balance_stage": 0, "restart": False, "days": s["strength_days"]}
-        w["strength"] = strength.sessions_for_week(w, eq, ctx)
+        attach_strength(w, s, eq, st, t)
         w["is_current"] = w["start"] <= t < w["start"] + timedelta(days=7)
         w["is_past"] = w["start"] + timedelta(days=7) <= t
     return s, weeks
+
+
+def ankle_state(t: date, weeks: list[dict], checkins: list[dict]) -> dict:
+    """Today's ankle and logging state, computed once per request from the stored facts."""
+    logs, checks, tests, snacks = db.logs(), db.checks(), db.tests(), db.snacks()
+    hop = ankle.hop_stage(t, tests, checks, logs, checkins, weeks)
+    by_ex: dict[str, list[dict]] = {}
+    for lg in logs:  # newest first, as db.logs() returns them
+        by_ex.setdefault(lg["exercise"], []).append(lg)
+    return {
+        "logs": logs, "checks": checks, "tests": tests, "snacks": snacks,
+        "by_key": {(lg["date"], lg["exercise"]): lg for lg in logs},
+        "by_ex": by_ex,
+        "flag_until": ankle.flag_until(t, checks, logs, checkins, weeks),
+        "hop_stage": hop,
+        "balance_stage": ankle.balance_stage(t, snacks, tests, checks, hop, logs, checkins, weeks),
+        "restart": ankle.restart(t, logs, checks),
+        "last_any_log": date.fromisoformat(logs[0]["date"]) if logs else None,
+    }
+
+
+def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date) -> None:
+    """Strength sessions with suggestions and logs, and the ankle snacks, for one week."""
+    end = w["start"] + timedelta(days=6)
+    flag = st["flag_until"]
+    ankle_flag = flag is not None and w["start"] <= flag and end >= t
+    q = next((wo for wo in w["workouts"] if "steps" in wo), None)
+    wed_bad = bool(q and q.get("review") and q["review"]["verdict"] == "bad")
+    ctx = {"factor": w["factor"], "wed_bad": wed_bad, "ankle_flag": ankle_flag, "hop_stage": st["hop_stage"],
+           "balance_stage": st["balance_stage"], "restart": st["restart"], "days": s["strength_days"]}
+    w["strength"] = strength.sessions_for_week(w, eq, ctx)
+    pctx = {"phase": w["phase"], "cutback": w["phase"] == "Cutback", "factor": w["factor"],
+            "ankle_flag": ankle_flag, "last_any_log": st["last_any_log"]}
+    for sess in w["strength"]:
+        day = sess["date"].isoformat()
+        for ex in sess["exercises"]:
+            ex["suggestion"] = progression.suggest(ex, st["by_ex"].get(ex["key"], []), pctx, eq, today=t)
+            ex["log"] = st["by_key"].get((day, ex["key"]))
+
+    items = ankle.BALANCE_STAGES[max(0, min(st["balance_stage"], len(ankle.BALANCE_STAGES) - 1))]
+    if w["phase"] == "Race week":
+        items = items[:2]
+    w["snack"] = {}
+    for name in s["ankle_days"]:
+        d = w["start"] + timedelta(days=DAYS.index(name))
+        if d > race_date(s):
+            continue
+        done = {x["item"] for x in st["snacks"] if x["date"] == d.isoformat()}
+        w["snack"][d] = {"date": d, "day": d.strftime("%a"), "stage": st["balance_stage"], "items": items,
+                         "done": done}
+    w["snack"] = dict(sorted(w["snack"].items()))
+    w["ankle_state"] = st
 
 
 @app.get("/")
@@ -151,6 +202,9 @@ def dashboard(request: Request, msg: str = ""):
     done = [wo for w in weeks for wo in w["workouts"] if wo.get("review") and wo["date"] <= t]
     last_run = done[-1] if done else None
     strength_today = next((x for x in (upcoming or {}).get("strength", []) if x["date"] == t), None)
+    st = weeks[0]["ankle_state"]
+    snack_today = (upcoming or {}).get("snack", {}).get(t)
+    tests_due = bool(upcoming) and ankle.tests_due(upcoming, weeks, st["tests"])
     profile = {
         "planned": [w["target_km"] for w in weeks],
         "actual": [w["actual_km"] if (w["is_past"] or w["is_current"]) else None for w in weeks],
@@ -171,6 +225,13 @@ def dashboard(request: Request, msg: str = ""):
             "next_run": next_run,
             "last_run": last_run,
             "strength_today": strength_today,
+            "strength_session": strength_today,
+            "snack_today": snack_today,
+            "morning_check": ankle.morning_check_due(t, st["logs"], st["checks"]),
+            "tests_due": tests_due,
+            "ankle_flag": st["flag_until"],
+            "hop_stage": st["hop_stage"],
+            "injured_side": s["injured_side"],
             "msg": msg,
             "paces": s["paces"],
             "goal": s["goal_time"],
@@ -286,3 +347,57 @@ def checkin(week: int = Form(...), feel: int = Form(...), pain: int = Form(...),
             (week, feel, pain, note, datetime.now().isoformat(timespec="seconds")),
         )
     return RedirectResponse("/?msg=Check-in saved.", status_code=303)
+
+
+def _num(text: str, kind=float):
+    """A form number, or None when the field is blank."""
+    text = (text or "").strip()
+    return kind(text) if text else None
+
+
+@app.post("/strength/log")
+def strength_log(
+    day: str = Form(..., alias="date"), exercise: str = Form(...), weight: str = Form(""), level: str = Form(""),
+    rung: str = Form("0"), target_reps: str = Form(""), rep1: str = Form(""), rep2: str = Form(""),
+    rep3: str = Form(""), rep4: str = Form(""), rep5: str = Form(""), rating: str = Form(...),
+    ankle_pain: str = Form(""),
+):
+    try:
+        row = {
+            "date": day, "exercise": exercise, "weight_kg": _num(weight), "level": level.strip() or None,
+            "rung": _num(rung, int) or 0, "target_reps": _num(target_reps, int),
+            "reps": [int(r) for r in (rep1, rep2, rep3, rep4, rep5) if r.strip()],
+            "rating": rating, "ankle_pain": _num(ankle_pain, int),
+            "created": datetime.now().isoformat(timespec="seconds"),
+        }
+    except ValueError:
+        return RedirectResponse(f"/#ex-{exercise}", status_code=303)
+    db.save_log(row)
+    return RedirectResponse(f"/#ex-{exercise}", status_code=303)
+
+
+@app.post("/snack")
+def snack_toggle(day: str = Form(..., alias="date"), item: str = Form(...)):
+    db.toggle_snack(day, item)
+    return RedirectResponse("/#snack", status_code=303)
+
+
+@app.post("/ankle/check")
+def ankle_check(day: str = Form(..., alias="date"), worse: str = Form("0"), note: str = Form("")):
+    db.save_check(day, worse == "1", note)
+    return RedirectResponse("/#ankle-check", status_code=303)
+
+
+@app.post("/ankle/tests")
+async def ankle_tests(request: Request):
+    form = await request.form()
+    day = form.get("date") or today().isoformat()
+    for key in ankle.TESTS:
+        try:
+            injured = _num(form.get(f"{key}_injured", ""))
+            other = _num(form.get(f"{key}_other", ""))
+        except ValueError:
+            continue
+        if injured is not None:
+            db.save_test(day, key, injured, other)
+    return RedirectResponse("/#tests", status_code=303)
