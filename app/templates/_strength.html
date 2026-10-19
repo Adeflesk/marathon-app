@@ -1,0 +1,198 @@
+{# Cards for This week: the strength checklist, the ankle snack, the morning check and the ankle tests.
+   Every form posts without JavaScript and comes back to its own anchor. CSS lives in index.html. #}
+
+{% macro kg(w) %}{{ '%g'|format(w) }} kg{% endmacro %}
+
+{% macro unit_of(ex) %}{{ {"carry": "m", "core": "s", "balance": "s"}.get(ex.role, "") }}{% endmacro %}
+
+{% macro reps_text(reps, unit) -%}
+{%- set u = (" " ~ unit) if unit else "" -%}
+{%- if reps and reps|unique|list|length == 1 -%}{{ reps|length }} × {{ reps[0] }}{{ u }}
+{%- else -%}{{ reps|join(", ") }}{{ u }}{%- endif -%}
+{%- endmacro %}
+
+{% macro done_line(ex) -%}
+{%- set lg = ex.log -%}
+{{ ex.name }}{% if lg.weight_kg is not none %} {{ kg(lg.weight_kg) }}{% endif %}, {{ reps_text(lg.reps, unit_of(ex)) }}, {{ lg.rating }}
+{%- if lg.ankle_pain %}, ankle pain {{ lg.ankle_pain }}{% endif -%}
+{%- endmacro %}
+
+{% macro last_text(lg, ex) -%}
+last time {% if lg.weight_kg is not none %}{{ kg(lg.weight_kg) }}{% else %}{{ reps_text(lg.reps, unit_of(ex)) }}{% endif %}, felt {{ lg.rating }}
+{%- endmacro %}
+
+{% macro strength_card(session, today, hero=false) %}
+{% set title, _, kind = session.name.partition(": ") %}
+{% set n = session.exercises|length %}
+{% set done = session.exercises|selectattr("log")|list|length %}
+{% set ns = namespace(open=none) %}
+{% for ex in session.exercises %}{% if ns.open is none and not ex.log %}{% set ns.open = loop.index0 %}{% endif %}{% endfor %}
+{% set h = "h1" if hero else "h2" %}
+<section class="strength stack{{ ' hero' if hero }}" id="strength" aria-labelledby="strength-h">
+  {% if hero %}<p class="when">Today, {{ today.strftime('%A %-d %B') }}</p>{% endif %}
+  <{{ h }} id="strength-h">
+    <span class="title">{{ title }}</span>
+    <span class="kind">{{ kind[:1]|upper ~ kind[1:] }}, about {{ session.minutes }} minutes</span>
+  </{{ h }}>
+  <div>
+    <div class="progress" aria-hidden="true"><i style="width: {{ (100 * done / n)|round(1) if n else 0 }}%"></i></div>
+    <p class="mute small" style="margin-top:6px">{{ done }} of {{ n }} done</p>
+  </div>
+  {% if session.note %}<p class="notice">{{ session.note }}</p>{% endif %}
+  <p class="small"><strong>Warm-up:</strong> {{ session.warmup }}</p>
+  <div class="exes">
+  {% for ex in session.exercises %}
+  {% set sg, lg = ex.suggestion, ex.log %}
+  {% set unit = unit_of(ex) %}
+  <details class="ex{{ ' done' if lg }}" id="ex-{{ ex.key }}"{{ ' open' if loop.index0 == ns.open }}>
+    <summary>
+      <span class="box" aria-hidden="true">{{ '✓' if lg }}</span>
+      <span class="what">
+        {% if lg %}<span class="vh">Done: </span><span class="name">{{ done_line(ex) }}</span>
+        {% else %}<span class="name">{{ ex.name }}</span><span class="rx">{{ ex.rx }}</span>{% endif %}
+      </span>
+    </summary>
+    <form method="post" action="/strength/log" class="log stack">
+      <input type="hidden" name="date" value="{{ session.date.isoformat() }}">
+      <input type="hidden" name="exercise" value="{{ ex.key }}">
+      {% set rung = lg.rung if lg else sg.rung %}
+      {% set level = lg.level if lg else sg.level %}
+      <input type="hidden" name="rung" value="{{ rung or 0 }}">
+      <input type="hidden" name="level" value="{{ level or '' }}">
+      <input type="hidden" name="target_reps" value="{{ (lg.target_reps if lg else sg.reps) or '' }}">
+      {% if lg %}
+      <p class="mute small">{{ ex.rx }}. Saved. Change anything and tap how it felt to save again.</p>
+      {% else %}
+      <p class="hint">
+        {%- if sg.weight is not none %}Try {{ kg(sg.weight) }} for {{ sg.reps }} {{ 'reps' if not unit else unit }}
+        {%- else %}Aim for {{ sg.reps }} {{ 'reps' if not unit else unit }}{% endif %}
+        {%- if level %}, {{ level }}{% endif %}
+        {%- if ex.last %} ({{ last_text(ex.last, ex) }}){% endif %}.</p>
+      {% if not ex.last or '; but' in sg.reason or 'days off' in sg.reason %}<p class="mute small">{{ sg.reason }}</p>{% endif %}
+      {% endif %}
+      <p class="mute small">{{ ex.cue }}</p>
+      <div class="fields">
+        {% if ex.weights %}
+        {% set w = lg.weight_kg if lg else sg.weight %}
+        <div>
+          <label for="w-{{ ex.key }}">Weight, kg</label>
+          <input type="number" id="w-{{ ex.key }}" name="weight" inputmode="decimal" step="{{ ex.weights.step }}"
+                 min="{{ '%g'|format(ex.weights.min) }}" max="{{ '%g'|format(ex.weights.max) }}" value="{{ '%g'|format(w) if w is not none else '' }}">
+        </div>
+        {% endif %}
+        {% if ex.ankle %}
+        {% set pain = lg.ankle_pain if lg and lg.ankle_pain is not none else 0 %}
+        <div>
+          <label for="p-{{ ex.key }}">Ankle pain, 0 to 10</label>
+          <select id="p-{{ ex.key }}" name="ankle_pain">
+            {% for i in range(11) %}<option value="{{ i }}"{{ ' selected' if i == pain }}>{{ i }}{{ ', none' if i == 0 }}{{ ', worst' if i == 10 }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
+      </div>
+      <fieldset class="sets">
+        <legend>{{ {"m": "Metres", "s": "Seconds"}.get(unit, "Reps") }} per set{{ ', each side' if ex.per_side }}</legend>
+        {% for i in range([ex.sets, 5]|min) %}
+        {% set v = lg.reps[i] if lg and lg.reps|length > i else ('' if lg else sg.reps) %}
+        <div>
+          <label for="r{{ i + 1 }}-{{ ex.key }}" class="small">Set {{ i + 1 }}</label>
+          <input type="number" id="r{{ i + 1 }}-{{ ex.key }}" name="rep{{ i + 1 }}" inputmode="numeric" min="0" step="1" value="{{ v }}">
+        </div>
+        {% endfor %}
+      </fieldset>
+      <fieldset class="rate">
+        <legend>How did it feel? Tap one to save.</legend>
+        <div class="actions">
+          {% for value, word in (("easy", "Easy"), ("right", "Right"), ("hard", "Hard")) %}
+          <button class="button quiet{{ ' on' if lg and lg.rating == value }}" type="submit" name="rating" value="{{ value }}">{{ word }}</button>
+          {% endfor %}
+        </div>
+        {% set effort = ex.rx.partition(', ')[2] %}
+        <p class="mute small">{% if effort %}Right means {{ effort }}. Easy is more left than that, Hard is less.{% else %}Right means it went as planned. Easy is more in the tank, Hard is less.{% endif %}</p>
+      </fieldset>
+    </form>
+  </details>
+  {% endfor %}
+  </div>
+</section>
+{% endmacro %}
+
+{% macro snack_card(snack) %}
+{% set n = snack["items"]|length %}
+{% set done = snack["items"]|selectattr("item", "in", snack.done)|list|length %}
+<section class="snack stack" id="snack" aria-labelledby="snack-h">
+  <h2 id="snack-h">Ankle snack</h2>
+  <p class="mute">About {{ snack["items"]|sum(attribute="minutes") }} minutes, any time today. Balance stage {{ snack.stage + 1 }}. {{ done }} of {{ n }} done.</p>
+  <ul class="ticks">
+    {% for x in snack["items"] %}
+    {% set on = x.item in snack.done %}
+    <li class="{{ 'done' if on }}">
+      <form method="post" action="/snack">
+        <input type="hidden" name="date" value="{{ snack.date.isoformat() }}">
+        <button class="tick" type="submit" name="item" value="{{ x.item }}">
+          <span class="box" aria-hidden="true">{{ '✓' if on }}</span>
+          <span><span class="vh">{{ 'Untick' if on else 'Tick off' }}: </span><span class="name">{{ x.name }}</span>
+            <span class="mute small">{{ x.dose }}</span></span>
+        </button>
+      </form>
+      <p class="mute small">{{ x.cue }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endmacro %}
+
+{% macro morning_check(today) %}
+<section class="stack" id="ankle-check" aria-labelledby="ankle-check-h">
+  <h2 id="ankle-check-h">How's the ankle this morning?</h2>
+  <p class="mute">You did hop or calf work yesterday. Compare with a normal morning: stiffness, pain on the first steps, swelling.</p>
+  <form method="post" action="/ankle/check" class="stack">
+    <input type="hidden" name="date" value="{{ today.isoformat() }}">
+    <div>
+      <label for="check-note">Anything to note? Optional.</label>
+      <input type="text" id="check-note" name="note">
+    </div>
+    <div class="actions">
+      <button class="button" type="submit" name="worse" value="0">Fine</button>
+      <button class="button quiet" type="submit" name="worse" value="1">Worse than usual</button>
+    </div>
+    <p class="mute small">Worse than usual raises the ankle flag for a week: no increases on ankle work.</p>
+  </form>
+</section>
+{% endmacro %}
+
+{% macro test_card(date, tests, injured_side) %}
+{% set other_side = "left" if injured_side == "right" else "right" %}
+<section class="tests stack" id="tests" aria-labelledby="tests-h">
+  <h2 id="tests-h">Ankle tests this week</h2>
+  <p class="mute">About 15 minutes, warmed up, on a rest or easy day. The results decide when hops and harder balance work start. Save what you've done and come back for the rest.</p>
+  <form method="post" action="/ankle/tests" class="stack">
+    <input type="hidden" name="date" value="{{ date.isoformat() }}">
+    {% for key, t in tests.items() %}
+    {% set lg = t.logged %}
+    <fieldset class="test">
+      <legend>{{ t.name }}{% if lg %} <span class="good small">saved</span>{% endif %}</legend>
+      <p class="mute small">{{ t.how }}</p>
+      <div class="fields">
+        {% if t.sides %}
+        <div>
+          <label for="{{ key }}-i">{{ injured_side|capitalize }} (injured), {{ t.unit }}</label>
+          <input type="number" id="{{ key }}-i" name="{{ key }}_injured" inputmode="decimal" min="0" step="any" value="{{ '%g'|format(lg.injured) if lg else '' }}">
+        </div>
+        <div>
+          <label for="{{ key }}-o">{{ other_side|capitalize }}, {{ t.unit }}</label>
+          <input type="number" id="{{ key }}-o" name="{{ key }}_other" inputmode="decimal" min="0" step="any" value="{{ '%g'|format(lg.other) if lg and lg.other is not none else '' }}">
+        </div>
+        {% else %}
+        <div>
+          <label for="{{ key }}-i">Ankle pain, 0 to 10</label>
+          <input type="number" id="{{ key }}-i" name="{{ key }}_injured" inputmode="numeric" min="0" max="10" step="1" value="{{ '%g'|format(lg.injured) if lg else '' }}">
+        </div>
+        {% endif %}
+      </div>
+    </fieldset>
+    {% endfor %}
+    <div><button class="button" type="submit">Save</button></div>
+  </form>
+</section>
+{% endmacro %}

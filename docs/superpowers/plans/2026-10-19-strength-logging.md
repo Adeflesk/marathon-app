@@ -74,16 +74,16 @@ all three. This plan pins the values those tables leave open.
       `tests() -> list[dict]`, oldest first.
     - `save_check(day: str, worse: bool, note: str = "") -> None` and `checks() -> list[dict]`, oldest first.
 
-- [ ] **Step 1: Write failing tests:**
+- [x] **Step 1: Write failing tests:**
   - `test_log_roundtrip`: `reps == [8, 8, 7]` after decoding.
   - `test_log_replaces_same_day`: two saves for `("2026-10-22", "box_squat")` leave one row, holding the
     second weight.
   - `test_snack_toggle`: toggling twice removes the row.
   - `test_tests_and_checks_ordered`.
-- [ ] **Step 2:** Run `pytest tests/test_db_strength.py -q`. Expected: FAIL (`no such table`).
-- [ ] **Step 3:** Implement in `app/db.py`.
-- [ ] **Step 4:** Run `pytest -q`. Expected: all pass.
-- [ ] **Step 5:** Commit: `git commit -am "Strength log, snack, ankle test and check tables"` (add the new
+- [x] **Step 2:** Run `pytest tests/test_db_strength.py -q`. Expected: FAIL (`no such table`).
+- [x] **Step 3:** Implement in `app/db.py`.
+- [x] **Step 4:** Run `pytest -q`. Expected: all pass.
+- [x] **Step 5:** Commit: `git commit -am "Strength log, snack, ankle test and check tables"` (add the new
   test file).
 
 ### Task 2: Plan and settings fields the routines need
@@ -101,13 +101,13 @@ all three. This plan pins the values those tables leave open.
   - `DEFAULTS["ankle_days"] = ["mon", "wed", "fri", "sat"]` and `DEFAULTS["injured_side"] = "right"`.
   - `"ankle_days"` is added to `REPLACE_KEYS`.
 
-- [ ] **Step 1: Write failing tests:**
+- [x] **Step 1: Write failing tests:**
   - `test_strength_block_counts_cutbacks`: weeks 1, 6, 7, 10, 11 and 15 map to 0, 0, 1, 1, 2 and 3.
   - `test_ankle_defaults`.
-- [ ] **Step 2:** Run them. Expected: FAIL (`KeyError`).
-- [ ] **Step 3:** Implement.
-- [ ] **Step 4:** Run `pytest -q`. Expected: all pass.
-- [ ] **Step 5:** Commit: "Plan exposes strength block; ankle settings".
+- [x] **Step 2:** Run them. Expected: FAIL (`KeyError`).
+- [x] **Step 3:** Implement.
+- [x] **Step 4:** Run `pytest -q`. Expected: all pass.
+- [x] **Step 5:** Commit: "Plan exposes strength block; ankle settings".
 
 ### Task 3: Routines and prescriptions (`app/strength.py`)
 
@@ -170,7 +170,7 @@ all three. This plan pins the values those tables leave open.
     `reduced` is True when any trim applies. Floor of 1 set.
   - **Taper 2:** no Thursday. **Race week:** no sessions. **`restart`:** use `ROLE_RX["Rebuild"]`.
 
-- [ ] **Step 1: Write failing tests:**
+- [x] **Step 1: Write failing tests:**
   - `test_thursday_build_full_dose`: week 9 Thursday `box_squat` is `sets == 3`, `lo, hi == 6, 8`, and
     `reduced` is False with the default ctx.
   - `test_thursday_trimmed_by_triggers`, parametrized over `wed_bad`, `ankle_flag` and factor 0.9: `sets == 2`
@@ -184,12 +184,12 @@ all three. This plan pins the values those tables leave open.
     of `ring_row`, and `goblet_squat` (dumbbell) instead of `box_squat`.
   - `test_taper2_and_race_week`.
   - `test_floor_one_set`: Cutback with factor 0.8 gives main `sets == 1`.
-- [ ] **Step 2:** Run `pytest tests/test_strength_routine.py -q`. Expected: FAIL.
-- [ ] **Step 3:** Implement. Cues come from the report's notes column (e.g. the safeties for the box squat).
-- [ ] **Step 4:** Update the `main.build_view` call to the new signature, passing a default ctx. Task 6
+- [x] **Step 2:** Run `pytest tests/test_strength_routine.py -q`. Expected: FAIL.
+- [x] **Step 3:** Implement. Cues come from the report's notes column (e.g. the safeties for the box squat).
+- [x] **Step 4:** Update the `main.build_view` call to the new signature, passing a default ctx. Task 6
   replaces it with real values: `wed_bad` comes from that week's quality workout review verdict == "bad".
   Then run `pytest -q`. Expected: all pass.
-- [ ] **Step 5:** Commit: "Strength sessions reworked to the research".
+- [x] **Step 5:** Commit: "Strength sessions reworked to the research".
 
 ### Task 4: Suggestions (`app/progression.py`)
 
@@ -242,7 +242,7 @@ all three. This plan pins the values those tables leave open.
 
        Kettlebell 12 → 16 kg happens only after an easy rating at `hi` ≥ 15, then resets reps to 8.
 
-- [ ] **Step 1: Write failing tests**, one per row of the report's rating table, with pinned numbers:
+- [x] **Step 1: Write failing tests**, one per row of the report's rating table, with pinned numbers:
   - `test_easy_all_top_steps_up`: RDL at 50 kg, reps [8, 8, 8], range 6–8, easy → 55.
   - `test_easy_twice_two_steps`: → 60.
   - `test_easy_not_top_adds_reps`: [6, 6, 6] → same weight, reps 8.
@@ -262,10 +262,10 @@ all three. This plan pins the values those tables leave open.
   - `test_time_off_11_to_28_days`.
   - `test_time_off_over_28_days`.
   - `test_suggestion_snaps_to_available`.
-- [ ] **Step 2:** Run `pytest tests/test_progression.py -q`. Expected: FAIL (`ModuleNotFoundError`).
-- [ ] **Step 3:** Implement `app/progression.py`.
-- [ ] **Step 4:** Run `pytest -q`. Expected: all pass.
-- [ ] **Step 5:** Commit: "Weight and rep suggestions from logs".
+- [x] **Step 2:** Run `pytest tests/test_progression.py -q`. Expected: FAIL (`ModuleNotFoundError`).
+- [x] **Step 3:** Implement `app/progression.py`.
+- [x] **Step 4:** Run `pytest -q`. Expected: all pass.
+- [x] **Step 5:** Commit: "Weight and rep suggestions from logs".
 
 ### Task 5: Ankle flag, stages and tests (`app/ankle.py`)
 
@@ -308,7 +308,7 @@ all three. This plan pins the values those tables leave open.
   - `restart(today, logs, checks) -> bool`: True if the gap since the last log is over 28 days, or there was
     a `worse` check in the last 7 days, and fewer than 2 strength log dates have passed since that point.
 
-- [ ] **Step 1: Write failing tests:**
+- [x] **Step 1: Write failing tests:**
   - `test_flag_expiry_and_scope`.
   - `test_flag_from_checkin`.
   - `test_morning_check_due_after_thursday`.
@@ -320,10 +320,10 @@ all three. This plan pins the values those tables leave open.
   - `test_worse_drops_stage`.
   - `test_balance_stage_needs_snacks_and_eyes_closed`.
   - `test_restart_after_gap`.
-- [ ] **Step 2:** Run `pytest tests/test_ankle.py -q`. Expected: FAIL.
-- [ ] **Step 3:** Implement `app/ankle.py`.
-- [ ] **Step 4:** Run `pytest -q`. Expected: all pass.
-- [ ] **Step 5:** Commit: "Ankle flag, hop and balance stages, test schedule".
+- [x] **Step 2:** Run `pytest tests/test_ankle.py -q`. Expected: FAIL.
+- [x] **Step 3:** Implement `app/ankle.py`.
+- [x] **Step 4:** Run `pytest -q`. Expected: all pass.
+- [x] **Step 5:** Commit: "Ankle flag, hop and balance stages, test schedule".
 
 ### Task 6: Wire into the view and add the POST routes
 
@@ -352,7 +352,7 @@ all three. This plan pins the values those tables leave open.
     - `POST /ankle/tests`: `date`, plus `<test>_injured` and `<test>_other` for each key in `TESTS`. Blank
       fields are skipped.
 
-- [ ] **Step 1: Write failing tests:**
+- [x] **Step 1: Write failing tests:**
   - `test_log_post_saves_and_redirects`.
   - `test_logged_exercise_shows_done_and_next_suggestion`: after logging an easy RDL, next Thursday's
     suggestion is +1 step.
@@ -360,10 +360,10 @@ all three. This plan pins the values those tables leave open.
   - `test_morning_check_post_raises_flag`: the following Thursday is `reduced`.
   - `test_wed_bad_trims_thursday`: insert a run and a review that make Wednesday `bad`.
   - `test_tests_post_and_due_clears`.
-- [ ] **Step 2:** Run them. Expected: FAIL.
-- [ ] **Step 3:** Implement.
-- [ ] **Step 4:** Run `pytest -q`. Expected: all pass.
-- [ ] **Step 5:** Commit: "Strength logging, snacks, ankle checks and tests wired into the app".
+- [x] **Step 2:** Run them. Expected: FAIL.
+- [x] **Step 3:** Implement.
+- [x] **Step 4:** Run `pytest -q`. Expected: all pass.
+- [x] **Step 5:** Commit: "Strength logging, snacks, ankle checks and tests wired into the app".
 
 ### Task 7: Cards on This week, and history on Strength
 
@@ -394,7 +394,7 @@ all three. This plan pins the values those tables leave open.
   - While the flag is up, a notice: "Ankle flag until <date>: no increases on ankle work."
 - **Strength page:** a per-exercise history table: date, weight, reps, rating.
 
-- [ ] **Step 1: Write failing tests:**
+- [x] **Step 1: Write failing tests:**
   - `test_strength_card_is_hero_on_tuesday`.
   - `test_strength_card_below_run_hero`.
   - `test_card_shows_last_and_suggestion`: shows "last time 50 kg" and "Try 55 kg".
@@ -403,14 +403,14 @@ all three. This plan pins the values those tables leave open.
   - `test_test_card_in_week_1`.
   - `test_history_on_strength_page`.
   - `test_pages_200` still passes.
-- [ ] **Step 2:** Run them. Expected: FAIL.
-- [ ] **Step 3:** Implement the templates and minimal CSS in each template's `head` block. No new fonts or
+- [x] **Step 2:** Run them. Expected: FAIL.
+- [x] **Step 3:** Implement the templates and minimal CSS in each template's `head` block. No new fonts or
   colours.
-- [ ] **Step 4:** Run `pytest -q`. Expected: all pass.
-- [ ] **Step 5:** Preview at 390 px, light and dark, with the scratchpad `preview.py` dated to a week-9
+- [x] **Step 4:** Run `pytest -q`. Expected: all pass.
+- [x] **Step 5:** Preview at 390 px, light and dark, with the scratchpad `preview.py` dated to a week-9
   Thursday and a seeded log. Screenshot the Thursday card part-way through, Tuesday, a snack, the morning check
   and the test card. Fix whatever reads badly.
-- [ ] **Step 6:** Commit: "Strength checklist, snack, ankle check and test cards".
+- [x] **Step 6:** Commit: "Strength checklist, snack, ankle check and test cards".
 
 ### Task 8: Docs, review, deploy
 

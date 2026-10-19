@@ -187,3 +187,124 @@ def test_bad_ankle_posts_rejected(client, monkeypatch, path, data, read):
     assert r.status_code == 303 and "msg=" in r.headers["location"]
     assert read() == []
     assert client.get("/").status_code == 200
+
+
+# --- Task 7: the cards on This week and the history on Strength ---
+
+def page(client, monkeypatch, day: date) -> str:
+    on(monkeypatch, day)
+    r = client.get("/")
+    assert r.status_code == 200
+    return r.text
+
+
+def test_strength_card_is_hero_on_tuesday(client, monkeypatch):
+    html = page(client, monkeypatch, D0 + timedelta(days=1))  # Tuesday: Strength B, no run
+    assert 'id="strength"' in html
+    assert html.index('id="strength"') < html.index('id="today-h"')
+    card = html[html.index('id="strength"'):html.index('id="today-h"')]
+    assert "<h1" in card and "Today, Tuesday 20 October" in card
+    assert "0 of " in card and " done" in card
+    first = next(e for e in session(main.build_view()[1], 1, "B")["exercises"])
+    assert f'<details class="ex" id="ex-{first["key"]}" open' in card  # the first undone one is open
+    assert card.count(" open>") == 1
+    assert 'name="rating" value="easy"' in card and ">Right<" in card and ">Hard<" in card
+
+
+def test_strength_card_below_run_hero(client, monkeypatch, tmp_path):
+    from app import config
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"strength_days": {"B": "mon"}}))
+    monkeypatch.setattr(config, "SETTINGS_PATH", path)
+    html = page(client, monkeypatch, D0)  # Monday: easy run and Strength B
+    assert html.index('id="today-h"') < html.index('id="strength"')
+    card = html[html.index('id="strength"'):]
+    assert "<h1" not in card
+
+
+def test_card_shows_last_and_suggestion(client, monkeypatch):
+    on(monkeypatch, D0 + timedelta(days=3))
+    client.post("/strength/log", data={"date": "2026-10-22", "exercise": "rdl", "weight": "50", "rung": "0",
+                                       "target_reps": "8", "rep1": "10", "rep2": "10", "rating": "easy"})
+    thu2 = D0 + timedelta(days=10)
+    html = page(client, monkeypatch, thu2)
+    ex = html[html.index('id="ex-rdl"'):]
+    ex = ex[:ex.index("</details>")]
+    assert "last time 50 kg" in ex and "Try 55 kg" in ex
+    assert 'name="weight"' in ex and 'value="55"' in ex and 'step="2.5"' in ex and 'min="20"' in ex
+    assert 'name="rep1"' in ex and 'value="8"' in ex
+    # a done row collapses to a one-line summary
+    client.post("/strength/log", data={"date": thu2.isoformat(), "exercise": "rdl", "weight": "55", "rung": "0",
+                                       "target_reps": "8", "rep1": "8", "rep2": "8", "rating": "right"})
+    html = client.get("/").text
+    ex = html[html.index('id="ex-rdl"'):]
+    ex = ex[:ex.index("</details>")]
+    assert "Barbell Romanian deadlift 55 kg, 2 × 8, right" in ex
+    assert "1 of " in html
+
+
+def test_ankle_item_has_pain_select(client, monkeypatch):
+    html = page(client, monkeypatch, D0 + timedelta(days=3))
+    ex = html[html.index('id="ex-calf_raise_straight"'):]
+    ex = ex[:ex.index("</details>")]
+    assert '<select' in ex and 'name="ankle_pain"' in ex and '<option value="10"' in ex
+    rdl = html[html.index('id="ex-rdl"'):]
+    assert 'name="ankle_pain"' not in rdl[:rdl.index("</details>")]
+
+
+def test_snack_card_on_ankle_day(client, monkeypatch):
+    html = page(client, monkeypatch, D0)  # Monday is an ankle day
+    assert 'id="snack"' in html and 'action="/snack"' in html
+    assert html.index('id="today-h"') < html.index('id="snack"')
+    for x in ankle.BALANCE_STAGES[0]:
+        assert x["name"] in html and f'name="item" value="{x["item"]}"' in html
+    assert "0 of 3 done" in html
+    client.post("/snack", data={"date": D0.isoformat(), "item": "eyes_open_stance"})
+    assert "1 of 3 done" in client.get("/").text
+    assert 'id="snack"' not in page(client, monkeypatch, D0 + timedelta(days=1))  # Tuesday isn't
+
+
+def test_morning_check_shown_after_thursday(client, monkeypatch):
+    thu = D0 + timedelta(days=3)
+    assert 'id="ankle-check"' not in page(client, monkeypatch, thu)
+    db.save_log({"date": thu.isoformat(), "exercise": "calf_raise_straight", "weight_kg": None,
+                 "reps": [12, 12], "target_reps": 12, "rating": "right"})
+    html = page(client, monkeypatch, thu + timedelta(days=1))
+    assert 'id="ankle-check"' in html and 'action="/ankle/check"' in html
+    assert html.index('id="ankle-check"') < html.index('id="today-h"')
+    assert ">Fine<" in html and ">Worse than usual<" in html
+    client.post("/ankle/check", data={"date": (thu + timedelta(days=1)).isoformat(), "worse": "1"})
+    html = client.get("/").text
+    assert 'id="ankle-check"' not in html
+    assert "Ankle flag until Friday 30 October: no increases on ankle work." in html
+
+
+def test_test_card_in_week_1(client, monkeypatch):
+    tue = D0 + timedelta(days=1)
+    html = page(client, monkeypatch, tue)
+    assert 'id="tests"' in html and 'action="/ankle/tests"' in html
+    assert html.index('id="today-h"') < html.index('id="tests"') or html.index('id="strength"') < html.index('id="tests"')
+    for key in ("pogo_trial_injured", "calf_raises_injured", "calf_raises_other", "y_balance_pl_other"):
+        assert f'name="{key}"' in html
+    assert 'name="single_hop_injured"' not in html  # hop tests only from hop stage 2
+    assert "Right (injured)" in html and "Left" in html
+    data = {"date": tue.isoformat(), "pogo_trial_injured": "0"}
+    for key in ankle.CORE_TESTS:
+        data[f"{key}_injured"], data[f"{key}_other"] = "20", "25"
+    client.post("/ankle/tests", data=data)
+    assert 'id="tests"' not in client.get("/").text
+    assert 'id="tests"' not in page(client, monkeypatch, D0 + timedelta(days=8))  # week 2 isn't a test week
+
+
+def test_history_on_strength_page(client, monkeypatch):
+    on(monkeypatch, D0 + timedelta(days=10))
+    for day, kg, rating in (("2026-10-22", "50", "easy"), ("2026-10-29", "55", "right")):
+        client.post("/strength/log", data={"date": day, "exercise": "rdl", "weight": kg, "rung": "0",
+                                           "target_reps": "8", "rep1": "8", "rep2": "8", "rating": rating})
+    r = client.get("/strength?week=2")
+    assert r.status_code == 200
+    assert [x["date"] for x in r.context["history"]["rdl"]] == ["2026-10-29", "2026-10-22"]
+    html = r.text
+    h = html[html.index('id="history"'):]
+    assert "Barbell Romanian deadlift" in h and "55 kg" in h and "8, 8" in h and "Right" in h and "Easy" in h
+    assert "Thu 29 Oct" in h

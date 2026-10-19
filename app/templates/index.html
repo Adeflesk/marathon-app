@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui with context %}
+{% import "_strength.html" as sx %}
 {% block head %}
 <style>
   .hero { padding-top: 20px; }
@@ -53,18 +54,78 @@
   .splits td, .splits th { padding: 6px 8px 6px 0; }
   .days .verdict { grid-column: 2 / -1; font-size: .8125rem; color: var(--mute); }
   .days .verdict.v-warn, .days .verdict.v-bad { color: var(--warn); }
+
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hero.second { padding-top: 28px; }
+  .hero.second .display { font-size: 2.75rem; }
+  .hero.second .band { height: 30px; border-radius: 15px; }
+
+  /* the strength checklist: one row per exercise, the open one holds its log form */
+  .strength h1 .title, .strength h2 .title { display: block; font-stretch: 62%; font-weight: 800; line-height: .88;
+    letter-spacing: -.01em; font-size: 2.75rem; }
+  .strength.hero h1 .title { font-size: clamp(3.5rem, 18vw, 4.75rem); margin-top: 6px; }
+  .strength .kind { display: block; font-stretch: 75%; font-weight: 700; font-size: 1.25rem; line-height: 1.2; margin-top: 4px; }
+  .progress { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+  .progress i { display: block; height: 100%; background: var(--easy); }
+  .exes { border-bottom: 1px solid var(--line); }
+  .ex { border-top: 1px solid var(--line); }
+  .ex summary, .tick { display: grid; grid-template-columns: 1.5rem 1fr; gap: 12px; align-items: start;
+    padding: 12px 0; list-style: none; }
+  .ex summary::-webkit-details-marker { display: none; }
+  .box { width: 1.375rem; height: 1.375rem; border: 2px solid var(--ink); border-radius: 5px; margin-top: 1px;
+    display: grid; place-items: center; font-size: .875rem; line-height: 1; font-weight: 700; }
+  .done .box { background: var(--ink); color: var(--on-ink); }
+  .ex .name, .tick .name { display: block; font-weight: 650; }
+  .ex .rx { display: block; font-weight: 400; font-size: .8125rem; color: var(--mute); }
+  .ex.done .name { font-weight: 500; color: var(--mute); }
+  .ex[open] .name { font-size: 1.125rem; }
+  .log { padding: 0 0 18px calc(1.5rem + 12px); }
+  .log .hint { font-weight: 650; color: var(--good); }
+  .log fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+  .log legend { font-weight: 600; padding: 0; margin-bottom: 6px; }
+  .log .sets { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.25rem, 1fr)); gap: 8px; }
+  .log .sets legend { grid-column: 1 / -1; }
+  .log .sets label { font-weight: 400; color: var(--mute); margin-bottom: 2px; }
+  .log input[type=number] { font-size: 1.125rem; font-weight: 650; font-stretch: 75%; }
+  .log .fields { grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
+  .rate .actions { margin-bottom: 6px; }
+  .rate .button { min-width: 5.5rem; }
+  .button.on { background: var(--ink); color: var(--on-ink); }
+
+  .ticks { list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--line); }
+  .ticks li { border-top: 1px solid var(--line); padding-bottom: 12px; }
+  .ticks form { margin: 0; }
+  .tick { width: 100%; font: inherit; color: inherit; text-align: left; background: none; border: 0; cursor: pointer;
+    padding-bottom: 4px; }
+  .tick .small { display: block; }
+  .ticks p { padding-left: calc(1.5rem + 12px); }
+  .ticks .done .name { color: var(--mute); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+  .tests fieldset { border: 0; border-top: 1px solid var(--line); padding: 14px 0 0; margin: 0; min-width: 0; }
+  .tests legend { font-weight: 650; padding: 0; float: left; width: 100%; margin-bottom: 4px; }
+  .tests legend + * { clear: both; }
+  .tests .fields { margin-top: 10px; }
+  .tests label { font-weight: 400; font-size: .8125rem; color: var(--mute); }
 </style>
 {% endblock %}
 {% block body %}
 {% if msg %}<p class="notice" role="status">{{ msg }}</p>{% endif %}
+{% if ankle_flag %}<p class="notice" style="margin-top:12px">Ankle flag until {{ ankle_flag.strftime('%A %-d %B') }}: no increases on ankle work.</p>{% endif %}
+
+{% if morning_check %}{{ sx.morning_check(today) }}{% endif %}
+
+{% set run_today = next_run and next_run.date == today %}
+{% set strength_hero = strength_session and not run_today %}
+{% if strength_hero %}{{ sx.strength_card(strength_session, today, true) }}{% endif %}
 
 {% if next_run %}
-<section class="hero stack" aria-labelledby="today-h">
+{% set rh = "h2" if strength_hero else "h1" %}
+<section class="hero stack{{ ' second' if strength_hero }}" aria-labelledby="today-h">
   <p class="when">{% if next_run.date == today %}Today, {% else %}Next run, {% endif %}{{ next_run.date.strftime('%A %-d %B') }}</p>
-  <h1 id="today-h">
+  <{{ rh }} id="today-h">
     <span class="display" style="display:block">{{ next_run.km|km }} km</span>
     <span class="kind">{{ ui.TYPE_NAMES.get(next_run.type, next_run.type) }}</span>
-  </h1>
+  </{{ rh }}>
   {{ ui.band_bar(next_run, paces, "reveal") }}
   {{ ui.key_for(next_run, paces) }}
   <p class="note">{{ next_run.note }}</p>
@@ -74,11 +135,14 @@
   <div class="actions">
     <a class="button" href="/workout/{{ next_run.date.isoformat() }}.fit">Download for the watch</a>
   </div>
-  {% if strength_today %}<p>Also today: <a href="/strength?week={{ week.week }}">{{ strength_today.name }}</a>, about {{ strength_today.minutes }} minutes.</p>{% endif %}
 </section>
-{% else %}
+{% elif not strength_hero %}
 <section class="hero"><h1 class="display" style="font-size:3.5rem">Race done.</h1><p class="note">No more runs in the plan.</p></section>
 {% endif %}
+
+{% if strength_session and not strength_hero %}{{ sx.strength_card(strength_session, today) }}{% endif %}
+{% if tests_due %}{{ sx.test_card(today, tests, injured_side) }}{% endif %}
+{% if snack_today %}{{ sx.snack_card(snack_today) }}{% endif %}
 
 {% if last_run %}
 {% set r = last_run.review %}

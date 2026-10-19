@@ -3,6 +3,7 @@ import os
 import secrets
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
+from math import gcd
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -156,6 +157,17 @@ def ankle_state(t: date, weeks: list[dict], checkins: list[dict]) -> dict:
     }
 
 
+def weight_range(weights: list[float]) -> dict | None:
+    """Min, max and an input step that lands on every available weight, or None for unloaded work."""
+    if not weights:
+        return None
+    lo = weights[0]
+    step = 0
+    for w in weights[1:]:
+        step = gcd(step, round((w - lo) * 100))
+    return {"min": lo, "max": weights[-1], "step": step / 100 if step else "any"}
+
+
 def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date) -> None:
     """Strength sessions with suggestions and logs, and the ankle snacks, for one week."""
     end = w["start"] + timedelta(days=6)
@@ -171,8 +183,11 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date) -> None:
     for sess in w["strength"]:
         day = sess["date"].isoformat()
         for ex in sess["exercises"]:
-            ex["suggestion"] = progression.suggest(ex, st["by_ex"].get(ex["key"], []), pctx, eq, today=t)
+            history = st["by_ex"].get(ex["key"], [])
+            ex["suggestion"] = progression.suggest(ex, history, pctx, eq, today=t)
             ex["log"] = st["by_key"].get((day, ex["key"]))
+            ex["last"] = next((lg for lg in history if lg["date"] < day), None)
+            ex["weights"] = weight_range(progression.available_weights(ex, eq))
 
     items = ankle.BALANCE_STAGES[max(0, min(st["balance_stage"], len(ankle.BALANCE_STAGES) - 1))]
     if w["phase"] == "Race week":
@@ -205,6 +220,12 @@ def dashboard(request: Request, msg: str = ""):
     st = weeks[0]["ankle_state"]
     snack_today = (upcoming or {}).get("snack", {}).get(t)
     tests_due = bool(upcoming) and ankle.tests_due(upcoming, weeks, st["tests"])
+    test_keys = [k for k in ankle.TESTS if k in ankle.CORE_TESTS
+                 or (k == "pogo_trial" and upcoming and upcoming["week"] == 1)
+                 or (k in ("single_hop", "triple_hop") and (st["hop_stage"] or 0) >= 2)]
+    week_end = upcoming["start"] + timedelta(days=6) if upcoming else t
+    tests_this_week = {x["test"]: x for x in st["tests"]
+                       if upcoming and upcoming["start"].isoformat() <= x["date"] <= week_end.isoformat()}
     profile = {
         "planned": [w["target_km"] for w in weeks],
         "actual": [w["actual_km"] if (w["is_past"] or w["is_current"]) else None for w in weeks],
@@ -229,6 +250,7 @@ def dashboard(request: Request, msg: str = ""):
             "snack_today": snack_today,
             "morning_check": ankle.morning_check_due(t, st["logs"], st["checks"]),
             "tests_due": tests_due,
+            "tests": {k: {**ankle.TESTS[k], "logged": tests_this_week.get(k)} for k in test_keys},
             "ankle_flag": st["flag_until"],
             "hop_stage": st["hop_stage"],
             "injured_side": s["injured_side"],
@@ -253,7 +275,9 @@ def strength_page(request: Request, week: int = 0):
     chosen = next((w for w in weeks if w["week"] == week), default)
     return templates.TemplateResponse(
         request, "strength.html",
-        {"s": s, "w": chosen, "n": len(weeks), "eq_summary": strength.summary(strength.load_equipment())},
+        {"s": s, "w": chosen, "n": len(weeks), "eq_summary": strength.summary(strength.load_equipment()),
+         "history": {ex["key"]: [{**lg, "day": date.fromisoformat(lg["date"])} for lg in db.logs(ex["key"])[:8]]
+                     for sess in chosen["strength"] for ex in sess["exercises"]}},
     )
 
 
