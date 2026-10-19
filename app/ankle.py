@@ -81,18 +81,23 @@ def _d(s) -> date:
 
 # --- flag ---
 
-def _triggers(checks=(), logs=(), checkins=(), weeks=()) -> list[date]:
-    """Dates that raise the ankle flag."""
-    out = [_d(c["date"]) for c in checks if c.get("worse")]
-    prev: dict[str, int | None] = {}
+def _pain_dates(logs) -> list[date]:
+    """Log dates where an ankle item hurt ≥3, or more than that item's previous log with a pain value."""
+    out = []
+    prev: dict[str, int] = {}
     for lg in sorted(logs, key=lambda r: r["date"]):  # oldest first, to compare with the previous log
-        ex = lg["exercise"]
-        if not EXERCISES.get(ex, {}).get("ankle"):
+        ex, pain = lg["exercise"], lg.get("ankle_pain")
+        if not EXERCISES.get(ex, {}).get("ankle") or pain is None:
             continue
-        pain, before = lg.get("ankle_pain"), prev.get(ex)
-        if pain is not None and (pain >= 3 or (before is not None and pain > before)):
+        if pain >= 3 or (ex in prev and pain > prev[ex]):
             out.append(_d(lg["date"]))
         prev[ex] = pain
+    return out
+
+
+def _triggers(checks, logs, checkins, weeks) -> list[date]:
+    """Dates that raise the ankle flag: worse checks, logged ankle pain, check-in pain ≥3 (week's Sunday)."""
+    out = [_d(c["date"]) for c in checks if c.get("worse")] + _pain_dates(logs)
     starts = {w["week"]: w["start"] for w in weeks}
     for ci in checkins:
         if (ci.get("pain") or 0) >= 3 and ci.get("week") in starts:
@@ -173,32 +178,38 @@ def _hop_gate(stage: int, latest: dict) -> bool:
     return False
 
 
-def hop_stage(today: date, tests, checks, logs=None) -> int | None:
+def _falling_calf(tests) -> set[date]:
+    """Test dates where the injured side's calf-raise count fell from the previous calf-raise test."""
+    rows = sorted((t for t in tests if t["test"] == "calf_raises"), key=lambda r: r["date"])
+    return {_d(b["date"]) for a, b in zip(rows, rows[1:]) if b["injured"] < a["injured"]}
+
+
+def hop_stage(today: date, tests, checks, logs, checkins, weeks) -> int | None:
     """0–3, or None ("not yet") before a passing pogo trial or after a long gap without a fresh one.
 
     A trial passes with pain ≤ 2 and no "worse" check the next morning (so it counts from the day after).
-    The flag inside the replay comes from "worse" checks and, when `logs` are given, logged ankle pain.
-    The 28-day gap rule needs `logs`: tests alone are 4 weeks apart and stop after the last cutback, so
-    without logs there is no way to tell time off from a normal gap between tests.
+    Step-back signals drop one stage (at most one a day, floor 0): a worse check, logged ankle pain ≥3 or
+    rising, or a falling calf-raise count. Only more than 28 days without logs or tests resets to None.
     """
     worse = {_d(c["date"]) for c in checks if c.get("worse")}
     trials = {_d(t["date"]) for t in tests if t["test"] == "pogo_trial" and t["injured"] <= 2}
     trials = {t for t in trials if t + timedelta(days=1) <= today and t + timedelta(days=1) not in worse}
     if not trials:
         return None
-    triggers = _triggers(checks, logs or ())
-    active = {_d(r["date"]) for r in list(tests) + list(logs)} if logs is not None else None
+    triggers = _triggers(checks, logs, checkins, weeks)
+    step_back = worse | set(_pain_dates(logs)) | _falling_calf(tests)
+    active = {_d(r["date"]) for r in list(tests) + list(logs)}
     stage, entered, last_active = None, None, None
     day = min(trials)
     while day <= today:
         if stage is not None and last_active is not None and (day - last_active).days > GAP_DAYS:
             stage = None
-        if active is not None and day in active:
+        if day in active:
             last_active = day
         if stage is None:
             if day in trials:
                 stage, entered = 0, day
-        elif day in worse:
+        elif day in step_back:
             stage, entered = max(0, stage - 1), day
         elif (stage < len(HOP_STAGES) - 1 and (day - entered).days >= STAGE_DAYS
               and not _flagged(day, triggers) and _hop_gate(stage, _latest(tests, day))):
@@ -207,12 +218,12 @@ def hop_stage(today: date, tests, checks, logs=None) -> int | None:
     return stage
 
 
-def balance_stage(today: date, snacks, tests, checks, hop: int | None) -> int:
-    """0–6: two weeks per stage, ≥4 snack days ticked in it and no flag; a worse morning holds it."""
+def balance_stage(today: date, snacks, tests, checks, hop: int | None, logs, checkins, weeks) -> int:
+    """0–6: two weeks per stage, ≥4 snack days ticked in it and no flag; a flag holds it, never drops it."""
     days = sorted({_d(s["date"]) for s in snacks if _d(s["date"]) <= today})
     if not days:
         return 0
-    triggers = _triggers(checks)
+    triggers = _triggers(checks, logs, checkins, weeks)
     stage, entered, day = 0, days[0], days[0]
     while day <= today and stage < len(BALANCE_STAGES) - 1:
         ticked = sum(1 for s in days if entered <= s <= day)

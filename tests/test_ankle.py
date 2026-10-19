@@ -34,6 +34,17 @@ GOOD_2 = [tst(0, "y_balance_ant", 64, 70), tst(0, "y_balance_pm", 92, 100), tst(
 TRIAL = tst(0, "pogo_trial", 1)
 
 
+WEEKLY = [log(n, "rdl") for n in range(0, 400, 7)]  # regular non-ankle sessions: no gap, no pain
+
+
+def hop(day, tests, checks=(), logs=WEEKLY, checkins=(), weeks=()):
+    return ankle.hop_stage(D0 + timedelta(days=day), tests, checks, logs, checkins, weeks)
+
+
+def bal(day, snacks, tests=(), checks=(), hop_st=None, logs=(), checkins=(), weeks=()):
+    return ankle.balance_stage(D0 + timedelta(days=day), snacks, tests, checks, hop_st, logs, checkins, weeks)
+
+
 def weeks(settings):
     return generate(settings, D0)
 
@@ -100,78 +111,118 @@ def test_test_weeks_default(settings):
 
 def test_hop_stage_not_yet_without_trial():
     today = D0 + timedelta(days=20)
-    assert ankle.hop_stage(today, [], []) is None
-    assert ankle.hop_stage(today, GOOD_1, []) is None
-    assert ankle.hop_stage(today, [tst(0, "pogo_trial", 3)], []) is None  # painful trial
-    assert ankle.hop_stage(today, [TRIAL], [check(1)]) is None  # worse the next morning
-    assert ankle.hop_stage(D0, [TRIAL], []) is None  # next morning not here yet
-    assert ankle.hop_stage(D0 + timedelta(days=1), [TRIAL], []) == 0
+    assert hop(20, [], []) is None
+    assert hop(20, GOOD_1, []) is None
+    assert hop(20, [tst(0, "pogo_trial", 3)], []) is None  # painful trial
+    assert hop(20, [TRIAL], [check(1)]) is None  # worse the next morning
+    assert hop(0, [TRIAL]) is None  # next morning not here yet
+    assert hop(1, [TRIAL], []) == 0
 
 
 def test_hop_stage_progression():
     tests = [TRIAL] + GOOD_1 + GOOD_2
-    assert ankle.hop_stage(D0 + timedelta(days=13), tests, []) == 0
-    assert ankle.hop_stage(D0 + timedelta(days=14), tests, []) == 1
-    assert ankle.hop_stage(D0 + timedelta(days=27), tests, []) == 1
-    assert ankle.hop_stage(D0 + timedelta(days=28), tests, []) == 2
-    assert ankle.hop_stage(D0 + timedelta(days=42), tests, []) == 3
-    assert ankle.hop_stage(D0 + timedelta(days=90), tests, []) == 3
+    assert hop(13, tests, []) == 0
+    assert hop(14, tests, []) == 1
+    assert hop(27, tests, []) == 1
+    assert hop(28, tests, []) == 2
+    assert hop(42, tests, []) == 3
+    assert hop(90, tests, []) == 3
     assert len(strength.HOP_STAGES) == 4
 
 
 def test_hop_stage_held_by_failed_gate():
     weak_calf = [TRIAL, tst(0, "calf_raises", 20, 27)] + GOOD_1[1:]
-    assert ankle.hop_stage(D0 + timedelta(days=40), weak_calf, []) == 1
+    assert hop(40, weak_calf, []) == 1
     # a passing re-test on day 30 opens the gate from then
     retest = weak_calf + [tst(30, "calf_raises", 26, 27)]
-    assert ankle.hop_stage(D0 + timedelta(days=29), retest, []) == 1
-    assert ankle.hop_stage(D0 + timedelta(days=30), retest, []) == 2
+    assert hop(29, retest, []) == 1
+    assert hop(30, retest, []) == 2
     # Y-balance below 80% of the other side holds stage 1 too
     weak_y = [TRIAL] + GOOD_1[:3] + [tst(0, "y_balance_pl", 70, 100)]
-    assert ankle.hop_stage(D0 + timedelta(days=40), weak_y, []) == 1
+    assert hop(40, weak_y, []) == 1
     # no other-side value means the gate can't be checked
-    assert ankle.hop_stage(D0 + timedelta(days=40), [TRIAL, tst(0, "calf_raises", 30)] + GOOD_1[1:], []) == 1
+    assert hop(40, [TRIAL, tst(0, "calf_raises", 30)] + GOOD_1[1:], []) == 1
     # stage 2 -> 3 needs the hop tests
-    assert ankle.hop_stage(D0 + timedelta(days=60), [TRIAL] + GOOD_1, []) == 2
+    assert hop(60, [TRIAL] + GOOD_1, []) == 2
     # a flag blocks a step that would otherwise happen
-    assert ankle.hop_stage(D0 + timedelta(days=14), [TRIAL] + GOOD_1, [], logs=[log(10, pain=4)]) == 0
+    assert hop(14, [TRIAL] + GOOD_1, [], logs=[log(10, pain=4)]) == 0
 
 
 def test_worse_drops_stage():
     tests = [TRIAL] + GOOD_1 + GOOD_2
-    assert ankle.hop_stage(D0 + timedelta(days=30), tests, [check(30)]) == 1
-    assert ankle.hop_stage(D0 + timedelta(days=16), tests, [check(16)]) == 0
-    assert ankle.hop_stage(D0 + timedelta(days=5), tests, [check(5)]) == 0  # never below 0
+    assert hop(30, tests, [check(30)]) == 1
+    assert hop(16, tests, [check(16)]) == 0
+    assert hop(5, tests, [check(5)]) == 0  # never below 0
     # 14 more days in the dropped stage before it climbs again
-    assert ankle.hop_stage(D0 + timedelta(days=43), tests, [check(30)]) == 1
-    assert ankle.hop_stage(D0 + timedelta(days=44), tests, [check(30)]) == 2
+    assert hop(43, tests, [check(30)]) == 1
+    assert hop(44, tests, [check(30)]) == 2
     # more than 28 days with no logs or tests: "not yet" until a fresh trial
-    assert ankle.hop_stage(D0 + timedelta(days=60), tests, [], logs=[log(20)]) is None
+    assert hop(60, tests, [], logs=[log(20)]) is None
     fresh = tests + [tst(55, "pogo_trial", 0)]
-    assert ankle.hop_stage(D0 + timedelta(days=60), fresh, [], logs=[log(20)]) == 0
-    assert ankle.hop_stage(D0 + timedelta(days=60), tests, [], logs=[log(20), log(45)]) == 3
+    assert hop(60, fresh, [], logs=[log(20)]) == 0
+    assert hop(60, tests, [], logs=[log(20), log(45)]) == 3
+
+
+def test_logged_pain_drops_stage():
+    tests = [TRIAL] + GOOD_1 + GOOD_2
+    assert hop(30, tests) == 2
+    assert hop(30, tests, logs=WEEKLY + [log(30, pain=3)]) == 1
+    assert hop(30, tests, logs=WEEKLY + [log(30, "rdl", pain=8)]) == 2  # not an ankle item
+    # a worse check and painful log on the same day drop only one stage
+    assert hop(30, tests, [check(30)], logs=WEEKLY + [log(30, pain=5)]) == 1
+
+
+def test_rising_pain_drops_stage():
+    tests = [TRIAL] + GOOD_1 + GOOD_2
+    assert hop(30, tests, logs=WEEKLY + [log(25, pain=1), log(30, pain=2)]) == 1
+    assert hop(30, tests, logs=WEEKLY + [log(25, pain=1), log(30, pain=1)]) == 2
+    # the previous log of that item, not of another ankle item
+    assert hop(30, tests, logs=WEEKLY + [log(25, "hops", pain=0), log(30, pain=2)]) == 2
+
+
+def test_falling_calf_raise_test_drops_stage():
+    tests = [TRIAL] + GOOD_1 + GOOD_2
+    assert hop(30, tests + [tst(30, "calf_raises", 26, 27)]) == 2  # same count: no drop
+    assert hop(30, tests + [tst(30, "calf_raises", 25, 27)]) == 1
+
+
+def test_hop_held_by_checkin_pain(settings):
+    ws = weeks(settings)
+    ci = [{"week": 2, "feel": 3, "pain": 3, "note": "", "created": "x"}]  # flag from Sun day 13 to day 20
+    tests = [TRIAL] + GOOD_1
+    assert hop(14, tests, weeks=ws) == 1
+    assert hop(20, tests, checkins=ci, weeks=ws) == 0  # held, not dropped
+    assert hop(21, tests, checkins=ci, weeks=ws) == 1
+
+
+def test_balance_held_by_logged_pain_flag():
+    four = [snack(n) for n in (1, 3, 5, 8)]
+    assert bal(15, four) == 1
+    assert bal(15, four, logs=[log(12, pain=4)]) == 0
+    assert bal(19, four, logs=[log(12, pain=4)]) == 0
+    assert bal(20, four, logs=[log(12, pain=4)]) == 1
 
 
 # --- balance stage ---
 
 def test_balance_stage_needs_snacks_and_eyes_closed():
     four = [snack(n) for n in (1, 3, 5, 8)]
-    assert ankle.balance_stage(D0 + timedelta(days=20), [], [], [], None) == 0
-    assert ankle.balance_stage(D0 + timedelta(days=20), four[:3], [], [], None) == 0
-    assert ankle.balance_stage(D0 + timedelta(days=15), four, [], [], None) == 1
+    assert bal(20, [], [], [], None) == 0
+    assert bal(20, four[:3], [], [], None) == 0
+    assert bal(15, four, [], [], None) == 1
     # 1 -> 2 needs 4 more snack days and a 30 s eyes-closed test
     more = four + [snack(n) for n in (16, 18, 20, 22)]
-    assert ankle.balance_stage(D0 + timedelta(days=40), more, [], [], None) == 1
+    assert bal(40, more, [], [], None) == 1
     ok = [tst(10, "eyes_closed_balance", 30, 35)]
-    assert ankle.balance_stage(D0 + timedelta(days=40), more, ok, [], None) == 2
-    assert ankle.balance_stage(D0 + timedelta(days=40), more, [tst(10, "eyes_closed_balance", 25, 35)],
+    assert bal(40, more, ok, [], None) == 2
+    assert bal(40, more, [tst(10, "eyes_closed_balance", 25, 35)],
                                [], None) == 1
     # a flag holds the stage
-    assert ankle.balance_stage(D0 + timedelta(days=15), four, [], [check(12)], None) == 0
+    assert bal(15, four, [], [check(12)], None) == 0
     # all the way: 5 -> 6 waits for hop stage 2
     every = [snack(n) for n in range(1, 200, 2)]
-    assert ankle.balance_stage(D0 + timedelta(days=199), every, ok, [], 1) == 5
-    assert ankle.balance_stage(D0 + timedelta(days=199), every, ok, [], 2) == 6
+    assert bal(199, every, ok, [], 1) == 5
+    assert bal(199, every, ok, [], 2) == 6
     assert len(ankle.BALANCE_STAGES) == 7
     for items in ankle.BALANCE_STAGES:
         assert all({"item", "name", "dose", "cue"} <= set(i) for i in items)
