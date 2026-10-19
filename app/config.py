@@ -48,10 +48,13 @@ DEFAULTS = {
     "run_days": {"mon": "easy", "wed": "quality", "sat": "easy", "sun": "long"},
     # Which weekday each strength session falls on.
     "strength_days": {"B": "tue", "A": "thu"},
+    # Days for the ankle routine, and which ankle is injured.
+    "ankle_days": ["mon", "wed", "fri", "sat"],
+    "injured_side": "right",
 }
 
 
-REPLACE_KEYS = {"run_days"}  # a custom value replaces the default, not merges
+REPLACE_KEYS = {"run_days", "ankle_days"}  # a custom value replaces the default, not merges
 
 
 def load_settings() -> dict:

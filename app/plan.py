@@ -130,6 +130,7 @@ def generate(s: dict, today: date) -> list[dict]:
     weights = {d: (0.4 if run_days[d] == "quality" else 0.3) for d in mid_days}
     total_w = sum(weights.values())
     race = race_date(s)
+    cutbacks_seen = 0
     block_work: dict = {}  # work km of each block's first session, for its cutback
 
     def _work_km(sess):
@@ -169,11 +170,13 @@ def generate(s: dict, today: date) -> list[dict]:
             wk["mp_km"] = mp_km
             workouts.append(wk)
         workouts.sort(key=lambda w: w["date"])
+        cutbacks_seen += v["cutback"]
         weeks.append({
             "week": i + 1,
             "start": monday,
             "phase": v["phase"],
             "block": v["block"],
+            "strength_block": cutbacks_seen,
             "weeks_to_race": n - 1 - i,
             "target_km": round(sum(w["km"] for w in workouts), 1),
             "workouts": workouts,

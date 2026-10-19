@@ -64,18 +64,33 @@ Paces are seconds per km. `tempo` is threshold pace, `subthreshold` is just quic
 python -m app.pace_engine 10 52:30
 ```
 
-## Strength
+## Strength & Ankle
 
-- Open **Equipment** and tick or edit what you own. Your kit is pre-filled (barbell and plates,
-  dumbbells 2.5-35 kg, 12 and 16 kg kettlebells, 5 kg medicine ball, box, rings). Check the bar weight
-  (assumed 20 kg) and that you have one pair of each plate. Bench, rack and bands are on. The pull-up bar is off.
-- **Strength** shows two sessions a week: Tuesday B (upper body, trunk, light kettlebell work) and
-  Thursday A (single-leg legs, calves, glutes, ankle balance). Exercises are picked from the equipment
-  you have, and a few rotate week to week.
-- Volume follows the run plan: 2 x 10-12 while rebuilding, 3 x 6-8 in build weeks, lower on cutback weeks
-  and when a hard run session (threshold or harder) is the day before or after, low-volume heavy in peak weeks,
-  tapering to nothing in race week.
-- A tough check-in (ankle pain 3+ or a hard week) also trims the next week's strength work.
+- Open **Equipment** and tick or edit what you own. Kit is pre-filled (barbell and plates,
+  dumbbells 2.5–35 kg, 12 and 16 kg kettlebells, 5 kg medicine ball, box, rings). Check the bar weight
+  (assumed 20 kg) and plate pairs. Bench, rack and bands are on; pull-up bar is off. Slots fallback to
+  dumbbell or bodyweight variations if you don't have rings or a rack.
+- **Two sessions a week** (Tuesday B and Thursday A by default):
+  - **Thursday A** (heavy legs and hops, ~45 min): hops (once unlocked), barbell box squat, Romanian deadlift,
+    the block's single-leg lift (step-ups in block 0, reverse lunges in block 1, Bulgarian split squats from block 2),
+    straight calf raise, seated soleus raise, and barbell hip thrust.
+  - **Tuesday B** (light full body and ankle, ~35 min): ankle balance block, dumbbell single-leg RDL, ring row +
+    push-up, suitcase carry + core (Pallof press, dead bug, or side plank), bent calf raise + band eversion.
+- **Logging card on This week**: on strength days, a checklist card appears. Each exercise gives a suggested
+  weight and reps. The very first session shows a warm-up ladder to establish your working weight. Enter your
+  weights and reps, then tap **Easy**, **Right**, or **Hard** to save. The app steps the load up or down next
+  time based on your rating. A break of 11–28 days drops one step; over 28 days resets conservatively (≤ 80%).
+- **Ankle snacks**: short 8–10 minute balance and tendon drills on non-strength days (`ankle_days`: default Mon,
+  Wed, Fri, Sat). Ticking snack items advances your balance stage (Stage 1 to 6).
+- **Ankle tests & hop stages**: readiness tests (20-pogo trial, calf raises to fatigue, eyes-closed balance,
+  Y-balance, single and triple hops) are scheduled in week 1, the first build week, and cutback weeks. Passing
+  tests unlocks plyometric hop stages (Stage 1 low pogos, Stage 2 line/lateral hops, Stage 3 continuous bounds).
+- **Morning check & ankle flag**: the morning after hop or calf work, a quick check asks how the ankle feels.
+  Rating it "Worse than usual", logging ankle pain ≥ 3, or reporting ankle pain ≥ 3 in the weekly check-in
+  raises the **ankle flag** for 7 days: no weight increases on ankle work, Thursday main lifts lose a set, and
+  hop work steps back.
+- **Auto-trimming**: sessions lose 1 set during cutback weeks, taper weeks, if your Wednesday run review was "bad",
+  or if the weekly check-in trimmed volume. Sessions never drop below 1 set. Race week has no strength sessions.
 
 ## Garmin Forerunner 255
 

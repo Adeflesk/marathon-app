@@ -126,3 +126,14 @@ def test_no_sharpener_the_day_before_the_race(settings):
     weeks, _ = build(settings, {"race_date": "2027-03-11", "run_days": {"mon": "easy", "wed": "quality", "sat": "easy", "sun": "long"}})
     race_week = weeks[-1]
     assert not any("steps" in x for x in race_week["workouts"]), [(x["day"], x["type"]) for x in race_week["workouts"]]
+
+
+def test_strength_block_counts_cutbacks(settings):
+    weeks = generate(settings, TODAY)
+    by = {w["week"]: w["strength_block"] for w in weeks}
+    assert [by[n] for n in (1, 6, 7, 10, 11, 15)] == [0, 0, 1, 1, 2, 3]
+
+
+def test_ankle_defaults(settings):
+    assert settings["ankle_days"] == ["mon", "wed", "fri", "sat"]
+    assert settings["injured_side"] == "right"

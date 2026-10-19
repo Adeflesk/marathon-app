@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Strength{% endblock %}
+{% import "_strength.html" as sx %}
 {% block head %}
 <style>
   .intro { padding-top: 20px; }
@@ -8,6 +9,9 @@
   .ex td:first-child { font-weight: 600; }
   .ex td:first-child small { display: block; font-weight: 400; color: var(--mute); font-size: .875rem; margin-top: 2px; }
   .ex td:last-child { white-space: nowrap; }
+  .history h3 { font-size: 1.0625rem; margin-top: 22px; }
+  .history table { margin-top: 6px; }
+  .history td, .history th { padding: 7px 8px 7px 0; }
 </style>
 {% endblock %}
 {% block body %}
@@ -39,6 +43,34 @@
   </table>
 </section>
 {% endfor %}
+
+{% set logged = [] %}
+{% for sess in w.strength %}{% for e in sess.exercises %}{% if history.get(e.key) and e.key not in logged|map(attribute="key") %}{% set _ = logged.append(e) %}{% endif %}{% endfor %}{% endfor %}
+{% if w.strength %}
+<section class="history" id="history" aria-labelledby="history-h">
+  <h2 id="history-h">Your logs</h2>
+  {% if not logged %}
+  <p class="mute" style="margin-top:8px">Nothing logged yet for these exercises. Log each one from <a href="/">This week</a> on the day.</p>
+  {% else %}
+  <p class="mute" style="margin-top:8px">The last 8 sessions of each exercise, newest first.</p>
+  {% for e in logged %}
+  {% set unit = sx.unit_of(e) %}
+  <h3>{{ e.name }}</h3>
+  <table>
+    <tr><th>Date</th><th>Weight</th><th>{{ {"m": "Metres", "s": "Seconds"}.get(unit, "Reps") }}</th><th>Felt</th></tr>
+    {% for lg in history[e.key] %}
+    <tr>
+      <td>{{ lg.day.strftime('%a %-d %b') }}</td>
+      <td>{% if lg.weight_kg is not none %}{{ sx.kg(lg.weight_kg) }}{% else %}<span class="mute">bodyweight</span>{% endif %}</td>
+      <td>{{ lg.reps|join(", ") }}</td>
+      <td>{{ lg.rating|capitalize }}{% if lg.ankle_pain %} <span class="mute small">ankle pain {{ lg.ankle_pain }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endfor %}
+  {% endif %}
+</section>
+{% endif %}
 
 <section><p class="mute small">RPE 7 means you could have done about 3 more reps. Pick the dumbbell or plate load that gets you there{% if eq_summary.dumbbells %} (dumbbells {{ eq_summary.dumbbells }}){% endif %}. Stop an exercise if the ankle pain goes above 3 out of 10.</p></section>
 {% endblock %}

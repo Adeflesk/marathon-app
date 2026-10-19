@@ -43,14 +43,18 @@ def test_trimmed_fit_matches(client):
     assert counts == reps(trimmed["steps"])
 
 
-def test_strength_a_reduced_only_next_to_hard(client):
+def test_thursday_full_dose_after_normal_wednesday(client):
     _, weeks = main.build_view()
 
     def strength_a(w):
-        return next(x for x in weeks[w - 1]["strength"] if x["name"].startswith("Strength A"))
+        return next(x for x in weeks[w - 1]["strength"] if x["key"] == "A")
 
-    assert strength_a(5)["reduced"] is False
-    assert strength_a(9)["reduced"] is True
+    for n in (5, 9):
+        a = strength_a(n)
+        assert a["reduced"] is False
+        squat = next(e for e in a["exercises"] if e["role"] == "main")
+        assert squat["sets"] == 3
+    assert strength_a(12)["reduced"] is True  # week 11's check-in trims week 12
 
 
 def test_pages_200(client):

@@ -37,6 +37,36 @@ def init() -> None:
                 note TEXT DEFAULT '',
                 created TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS strength_logs (
+                date TEXT NOT NULL,
+                exercise TEXT NOT NULL,
+                weight_kg REAL,
+                level TEXT,
+                rung INTEGER DEFAULT 0,
+                reps TEXT,
+                target_reps INTEGER,
+                rating TEXT,
+                ankle_pain INTEGER,
+                created TEXT,
+                PRIMARY KEY (date, exercise)
+            );
+            CREATE TABLE IF NOT EXISTS snack_logs (
+                date TEXT NOT NULL,
+                item TEXT NOT NULL,
+                PRIMARY KEY (date, item)
+            );
+            CREATE TABLE IF NOT EXISTS ankle_tests (
+                date TEXT NOT NULL,
+                test TEXT NOT NULL,
+                injured REAL NOT NULL,
+                other REAL,
+                PRIMARY KEY (date, test)
+            );
+            CREATE TABLE IF NOT EXISTS ankle_checks (
+                date TEXT PRIMARY KEY,
+                worse INTEGER NOT NULL,
+                note TEXT DEFAULT ''
+            );
             """
         )
 
@@ -48,3 +78,58 @@ def run_details(ids: list[int]) -> dict[int, dict]:
     with conn() as c:
         rows = c.execute(f"SELECT id, splits, laps FROM run_details WHERE id IN ({','.join('?' * len(ids))})", ids)
         return {r["id"]: {"splits": json.loads(r["splits"]), "laps": json.loads(r["laps"])} for r in rows}
+
+
+def save_log(row: dict) -> None:
+    """Insert or replace one exercise log; `reps` is a list stored as JSON."""
+    with conn() as c:
+        c.execute(
+            "INSERT OR REPLACE INTO strength_logs (date, exercise, weight_kg, level, rung, reps, target_reps,"
+            " rating, ankle_pain, created) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (row["date"], row["exercise"], row.get("weight_kg"), row.get("level"), row.get("rung", 0),
+             json.dumps(row.get("reps", [])), row.get("target_reps"), row.get("rating"),
+             row.get("ankle_pain"), row.get("created")),
+        )
+
+
+def logs(exercise: str | None = None) -> list[dict]:
+    """Strength logs, newest first, optionally for one exercise."""
+    sql, args = "SELECT * FROM strength_logs", ()
+    if exercise is not None:
+        sql, args = sql + " WHERE exercise = ?", (exercise,)
+    with conn() as c:
+        rows = c.execute(sql + " ORDER BY date DESC, exercise", args).fetchall()
+    return [{**dict(r), "reps": json.loads(r["reps"] or "[]")} for r in rows]
+
+
+def toggle_snack(day: str, item: str) -> None:
+    with conn() as c:
+        if c.execute("DELETE FROM snack_logs WHERE date = ? AND item = ?", (day, item)).rowcount == 0:
+            c.execute("INSERT INTO snack_logs (date, item) VALUES (?, ?)", (day, item))
+
+
+def snacks() -> list[dict]:
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT date, item FROM snack_logs ORDER BY date, item")]
+
+
+def save_test(day: str, test: str, injured: float, other: float | None) -> None:
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO ankle_tests (date, test, injured, other) VALUES (?,?,?,?)",
+                  (day, test, injured, other))
+
+
+def tests() -> list[dict]:
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM ankle_tests ORDER BY date, test")]
+
+
+def save_check(day: str, worse: bool, note: str = "") -> None:
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO ankle_checks (date, worse, note) VALUES (?,?,?)",
+                  (day, int(worse), note))
+
+
+def checks() -> list[dict]:
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM ankle_checks ORDER BY date")]
