@@ -151,3 +151,39 @@ def test_tests_post_and_due_clears(client, monkeypatch):
     page = client.get("/")
     assert page.context["tests_due"] is False
     assert page.context["hop_stage"] == 0  # pain-free pogo trial yesterday, fine morning
+
+
+GOOD_LOG = {"date": "2026-10-22", "exercise": "rdl", "weight": "40", "rung": "0", "target_reps": "8",
+            "rep1": "10", "rep2": "10", "rating": "right"}
+
+
+@pytest.mark.parametrize("change", [
+    {"date": "notadate"},
+    {"date": "2026-10-23"},  # tomorrow
+    {"exercise": "zzz"},
+    {"rating": "zzz"},
+    {"rating": None},
+    {"rep1": "ten"},
+])
+def test_bad_log_rejected(client, monkeypatch, change):
+    on(monkeypatch, D0 + timedelta(days=3))
+    data = {k: v for k, v in {**GOOD_LOG, **change}.items() if v is not None}
+    r = client.post("/strength/log", data=data, follow_redirects=False)
+    assert r.status_code == 303 and "msg=" in r.headers["location"]
+    assert db.logs() == []
+    assert client.get("/").status_code == 200
+
+
+@pytest.mark.parametrize("path,data,read", [
+    ("/snack", {"date": "notadate", "item": "eyes_open_stance"}, db.snacks),
+    ("/snack", {"date": "2026-10-19", "item": "zzz"}, db.snacks),
+    ("/ankle/check", {"date": "notadate", "worse": "1"}, db.checks),
+    ("/ankle/tests", {"date": "notadate", "calf_raises_injured": "20"}, db.tests),
+    ("/ankle/tests", {"date": "2026-10-19", "calf_raises_injured": "x"}, db.tests),
+])
+def test_bad_ankle_posts_rejected(client, monkeypatch, path, data, read):
+    on(monkeypatch, D0 + timedelta(days=3))
+    r = client.post(path, data=data, follow_redirects=False)
+    assert r.status_code == 303 and "msg=" in r.headers["location"]
+    assert read() == []
+    assert client.get("/").status_code == 200

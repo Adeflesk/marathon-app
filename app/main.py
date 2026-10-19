@@ -355,49 +355,89 @@ def _num(text: str, kind=float):
     return kind(text) if text else None
 
 
+def _back(anchor: str, msg: str = "") -> RedirectResponse:
+    query = f"?{urlencode({'msg': msg})}" if msg else ""
+    return RedirectResponse(f"/{query}#{anchor}", status_code=303)
+
+
+def _day(text: str) -> date | None:
+    """A form date as a `date`, or None when it isn't a valid ISO date."""
+    try:
+        return date.fromisoformat((text or "").strip())
+    except ValueError:
+        return None
+
+
+RATINGS = {"easy", "right", "hard"}
+SNACK_ITEMS = {x["item"] for stage in ankle.BALANCE_STAGES for x in stage}
+
+
 @app.post("/strength/log")
 def strength_log(
-    day: str = Form(..., alias="date"), exercise: str = Form(...), weight: str = Form(""), level: str = Form(""),
+    day: str = Form("", alias="date"), exercise: str = Form(""), weight: str = Form(""), level: str = Form(""),
     rung: str = Form("0"), target_reps: str = Form(""), rep1: str = Form(""), rep2: str = Form(""),
-    rep3: str = Form(""), rep4: str = Form(""), rep5: str = Form(""), rating: str = Form(...),
+    rep3: str = Form(""), rep4: str = Form(""), rep5: str = Form(""), rating: str = Form(""),
     ankle_pain: str = Form(""),
 ):
+    anchor = f"ex-{exercise}" if exercise in strength.EXERCISES else "strength"
+    d = _day(day)
+    if d is None:
+        return _back(anchor, "Not saved: that date isn't valid.")
+    if d > today():
+        return _back(anchor, "Not saved: that date is in the future.")
+    if exercise not in strength.EXERCISES:
+        return _back(anchor, "Not saved: unknown exercise.")
+    if rating not in RATINGS:
+        return _back(anchor, "Not saved: pick Easy, Right or Hard.")
     try:
         row = {
-            "date": day, "exercise": exercise, "weight_kg": _num(weight), "level": level.strip() or None,
-            "rung": _num(rung, int) or 0, "target_reps": _num(target_reps, int),
+            "date": d.isoformat(), "exercise": exercise, "weight_kg": _num(weight),
+            "level": level.strip() or None, "rung": _num(rung, int) or 0, "target_reps": _num(target_reps, int),
             "reps": [int(r) for r in (rep1, rep2, rep3, rep4, rep5) if r.strip()],
             "rating": rating, "ankle_pain": _num(ankle_pain, int),
             "created": datetime.now().isoformat(timespec="seconds"),
         }
     except ValueError:
-        return RedirectResponse(f"/#ex-{exercise}", status_code=303)
+        return _back(anchor, "Not saved: weight, reps and pain must be numbers.")
     db.save_log(row)
-    return RedirectResponse(f"/#ex-{exercise}", status_code=303)
+    return _back(anchor)
 
 
 @app.post("/snack")
-def snack_toggle(day: str = Form(..., alias="date"), item: str = Form(...)):
-    db.toggle_snack(day, item)
-    return RedirectResponse("/#snack", status_code=303)
+def snack_toggle(day: str = Form("", alias="date"), item: str = Form("")):
+    d = _day(day)
+    if d is None:
+        return _back("snack", "Not saved: that date isn't valid.")
+    if item not in SNACK_ITEMS:
+        return _back("snack", "Not saved: unknown snack item.")
+    db.toggle_snack(d.isoformat(), item)
+    return _back("snack")
 
 
 @app.post("/ankle/check")
-def ankle_check(day: str = Form(..., alias="date"), worse: str = Form("0"), note: str = Form("")):
-    db.save_check(day, worse == "1", note)
-    return RedirectResponse("/#ankle-check", status_code=303)
+def ankle_check(day: str = Form("", alias="date"), worse: str = Form("0"), note: str = Form("")):
+    d = _day(day)
+    if d is None:
+        return _back("ankle-check", "Not saved: that date isn't valid.")
+    db.save_check(d.isoformat(), worse == "1", note)
+    return _back("ankle-check")
 
 
 @app.post("/ankle/tests")
 async def ankle_tests(request: Request):
     form = await request.form()
-    day = form.get("date") or today().isoformat()
-    for key in ankle.TESTS:
-        try:
+    d = _day(form.get("date") or "")
+    if d is None:
+        return _back("tests", "Not saved: that date isn't valid.")
+    rows = []
+    try:
+        for key in ankle.TESTS:  # only known tests are read; anything else in the form is ignored
             injured = _num(form.get(f"{key}_injured", ""))
             other = _num(form.get(f"{key}_other", ""))
-        except ValueError:
-            continue
-        if injured is not None:
-            db.save_test(day, key, injured, other)
-    return RedirectResponse("/#tests", status_code=303)
+            if injured is not None:
+                rows.append((key, injured, other))
+    except ValueError:
+        return _back("tests", "Not saved: test results must be numbers.")
+    for key, injured, other in rows:
+        db.save_test(d.isoformat(), key, injured, other)
+    return _back("tests")
