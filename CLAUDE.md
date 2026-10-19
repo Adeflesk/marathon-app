@@ -36,9 +36,10 @@ The plan is **never stored**. Every request recomputes it from settings, and onl
 are persisted. Keep it that way: changing `settings.json` or the generator should reshape the whole plan.
 
 - `app/config.py` — `DEFAULTS` merged with optional `settings.json` at the repo root. Dict values are
-  shallow-merged, except keys in `REPLACE_KEYS` (`run_days`) which replace wholesale.
+  shallow-merged, except keys in `REPLACE_KEYS` (`run_days`, `ankle_days`) which replace wholesale.
   Also loads `.env` itself (no python-dotenv). `plan_start` is pinned (must be a Monday) so week numbers
-  don't drift.
+  don't drift. Settings include `ankle_days` (default `["mon", "wed", "fri", "sat"]`) and `injured_side`
+  (default `"right"`).
 - `app/plan.py` — pure functions.
   - `weekly_volumes()` shapes each week's km and long run: Rebuild, then build blocks of three
     between cutbacks, then 2 Taper weeks and Race week.
@@ -49,7 +50,8 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
       first strength week.
   - `generate()` spreads each week's km over `run_days` by role (`easy`, `quality`, exactly one `long`).
     The quality day's session sets its own km (its cool-down fills the day), easy runs keep a floor,
-    and the last mid-week run absorbs rounding.
+    and the last mid-week run absorbs rounding. Each week gains `strength_block` (count of cutbacks
+    prior/at that week: 0 for weeks 1–6, 1 for 7–10, 2 for 11–14, 3 from 15).
   - `feedback_factor()` turns a check-in into a 0.8/0.9/1.0 multiplier; the plan only ever adjusts
     down.
 - `app/sessions.py` — the Wednesday menu.
@@ -58,15 +60,27 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   - `quality_session()` picks the session by block and position, and `_fit()` trims it to the work
     caps (12% of the week at `tempo`, 18% at `subthreshold`/MP) and to the day's room.
   - `scale_session()` applies the check-in trim by reps (rounded, never below 2), or by a shorter rep
-    when reps can't drop. `hard` marks sessions that
-    lighten an adjacent Strength A.
+    when reps can't drop.
+- `app/strength.py` — routines and prescriptions based on sports science research.
+  - Prescriptions come from `ROLE_RX` per phase (Rebuild, Build, Cutback, Peak, Taper).
+  - Sessions are Thursday A (hops when ready, box squat, RDL, single-leg lift by block, calf raises, seated soleus, hip thrust)
+    and Tuesday B (balance, single-leg RDL, ring row + push-up, suitcase carry + core, bent calf + band eversion).
+  - Equipment fallbacks dynamically map to dumbbells/bodyweight if rings or racks are missing (`strength.tokens(eq)`).
+  - Trims apply when cutback, factor 0.9/0.8, Wednesday quality run verdict is "bad", or ankle flag is active (floor of 1 set).
+- `app/progression.py` — pure progression and suggestion engine from logged history.
+  - `suggest(ex, history, ctx, eq, today)`: suggests working weight, target reps, rungs, and warm-up ladders.
+  - Adjusts load from Easy/Right/Hard ratings and RPE targets. Advances tempo/pause rungs at top weight.
+  - Guards against load increases during cutbacks, tapers, fatigue trims, or when an ankle flag is active.
+  - Conservative load drops after 11–28 days (-1 step) or >28 days off (≤ 80% weight).
+- `app/ankle.py` — pure ankle state and readiness tracking.
+  - Replays logs, tests, and checks to determine `hop_stage` (0–3), `balance_stage` (0–6), and `test_weeks` (weeks 1, 4, 7, 11, 15).
+  - Manages `flag_until`: raises 7-day ankle flag on morning check "worse than usual", ankle pain ≥ 3 on ankle items, or weekly check-in pain ≥ 3.
+  - Identifies when morning check is due and when readiness tests are due.
 - `app/main.py` — `build_view()` is the hub every page uses: generate plan → apply the *previous* week's
-  check-in factor → join actual runs from SQLite by date → attach strength sessions and current/past flags.
+  check-in factor → join actual runs from SQLite by date → compute ankle context and attach strength sessions, suggestions, and snacks.
   Routes: `/`, `/plan`, `/strength`, `/equipment` (GET/POST), `/workout/{date}.fit`,
-  `/workouts/week/{n}.zip`, `/sync`, `/checkin`. POSTs redirect with a `msg` query param.
-- `app/strength.py` — equipment lives in `data/equipment.json` (defaults in `DEFAULT_EQUIPMENT`).
-  Equipment is reduced to capability tokens; exercise slots pick the first option the tokens allow,
-  rotating by week. Prescription depends on phase, check-in factor and whether a tempo run is adjacent.
+  `/workouts/week/{n}.zip`, `/sync`, `/checkin`, `/strength/log` (POST), `/snack` (POST), `/ankle/check` (POST), `/ankle/tests` (POST).
+  POSTs redirect with a 303 to their anchor.
 - `app/garmin.py` — builds FIT workout files with `fit-tool`; pace targets are speed ranges (m/s) around
   `settings.paces`. Repeat blocks become a `REPEAT_UNTIL_STEPS_CMPLT` step after their steps, pointing back
   to the block's first step index, mirroring Garmin Connect's own files (samples in `samples/garmin/`,
@@ -80,9 +94,10 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   flagged, the long run's MP finish checked from its last splits, and structured sessions checked rep by
   rep from Garmin `work` laps (within 10 s/km is on pace). `build_view` attaches `review` to each planned
   workout whose day has a synced run with details (the day's longest run).
-- `app/db.py` — three tables: `activities` (synced runs), `run_details` (JSON km splits and laps per run)
-  and `checkins` (keyed by week number). Schema is
-  `CREATE IF NOT EXISTS` on startup; there are no migrations. `DB_PATH` env var overrides `data/marathon.db`.
+- `app/db.py` — tables: `activities` (synced runs), `run_details` (JSON km splits and laps per run),
+  `checkins` (keyed by week number), `strength_logs` (logged sets, weight, reps, rating, ankle pain),
+  `snack_logs` (daily ankle snack ticks), `ankle_tests` (readiness test values), and `ankle_checks` (morning ankle checks).
+  Schema is `CREATE IF NOT EXISTS` on startup; there are no migrations. `DB_PATH` env var overrides `data/marathon.db`.
 
 ## Conventions
 

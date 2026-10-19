@@ -419,8 +419,8 @@ all three. This plan pins the values those tables leave open.
   snacks, tests and hop stages, and the ankle flag), `CLAUDE.md` (the new modules and tables; strength no
   longer lightened by adjacency)
 
-- [ ] **Step 1:** Update the docs.
-- [ ] **Step 2:** Run `pytest -q` and the generator one-liner. Check the spec's "How to check it" list.
+- [x] **Step 1:** Update the docs.
+- [x] **Step 2:** Run `pytest -q` and the generator one-liner. Check the spec's "How to check it" list.
 - [ ] **Step 3:** Commit, push the branch, and open a PR.
 - [ ] **Step 4:** After the user merges, run `fly deploy --ha=false`, wake the app, and run the `fly ssh
   console` page check. Expected: `[200, 200, 200, 200]`. The user logs a real Tuesday session.
