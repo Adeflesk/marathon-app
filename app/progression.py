@@ -56,14 +56,12 @@ def _snap_down(w: float, weights: list[float]) -> float:
     return below[-1] if below else weights[0]
 
 
-def _increment(w: float, ex: dict, n: int, phase: str) -> float:
+def _increment(w: float, ex: dict, phase: str) -> float:
     load = ex.get("load")
     if load == "barbell_lower":
         return 2.5 if w >= 60 or phase == "Peak" else 5.0
     if load == "barbell_upper":
         return 2.5
-    if load == "dumbbell_lower":
-        return 2.5 if abs(n) >= 2 else 1.25
     return 1.25
 
 
@@ -78,7 +76,7 @@ def step(weight: float, ex: dict, eq: dict, n: int, phase: str) -> float:
             i = weights.index(w) + (1 if n > 0 else -1)
             w = weights[max(0, min(i, len(weights) - 1))]
             continue
-        inc = _increment(w, ex, n, phase)
+        inc = _increment(w, ex, phase)
         if n > 0:
             up = [x for x in weights if x >= w + inc - 1e-9]
             w = up[0] if up else weights[-1]

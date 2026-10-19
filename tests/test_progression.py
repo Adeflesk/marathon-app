@@ -222,7 +222,7 @@ def test_step_sizes():
     assert step(40, {**RDL, "load": "barbell_upper"}, e, 1, "Build") == 42.5
     lunge = ex("reverse_lunge", "single_leg", 6, 8)
     assert step(15, lunge, e, 1, "Build") == 16.25
-    assert step(15, lunge, e, 2, "Build") == 20
+    assert step(15, lunge, e, 2, "Build") == 17.5
     assert step(20, ex("db_row", "tue_upper", 8, 10), e, 2, "Build") == 22.5
     assert step(35, ex("db_row", "tue_upper", 8, 10), e, 1, "Build") == 35
     kb = ex("sl_rdl_kb", "tue_lift", 8, 10)
@@ -237,3 +237,10 @@ def test_timed_and_carry_stay_in_range():
     s = run(core, [log(None, [30, 30], "easy", exercise="pallof_press")])
     assert s["reps"] == 32
     assert run(ex("hops", "hops", 10, 15), [log(None, [15, 15, 15], "easy", exercise="hops")])["reps"] == 10
+
+
+def test_dumbbell_lower_easy_twice_is_2_5_total():
+    lunge = ex("reverse_lunge", "single_leg", 6, 8)
+    k = {"exercise": "reverse_lunge"}
+    s = run(lunge, [log(15, [8, 8, 8], "easy", **k), log(13.75, [8, 8, 8], "easy", days_ago=14, **k)])
+    assert (s["weight"], s["reps"]) == (17.5, 6)
