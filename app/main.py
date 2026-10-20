@@ -173,16 +173,22 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date) -> None:
     """Strength sessions with suggestions and logs, and the ankle snacks, for one week."""
     end = w["start"] + timedelta(days=6)
     flag = st["flag_until"]
-    ankle_flag = flag is not None and w["start"] <= flag and end >= t
+
+    def flagged(day: date) -> bool:
+        """The flag is still up on `day`, in a week that isn't over."""
+        return flag is not None and day <= flag and end >= t
+
+    thu = w["start"] + timedelta(days=DAYS.index(s["strength_days"]["A"]))
     q = next((wo for wo in w["workouts"] if "steps" in wo), None)
     wed_bad = bool(q and q.get("review") and q["review"]["verdict"] == "bad")
-    ctx = {"factor": w["factor"], "wed_bad": wed_bad, "ankle_flag": ankle_flag, "hop_stage": st["hop_stage"],
+    ctx = {"factor": w["factor"], "wed_bad": wed_bad, "ankle_flag": flagged(thu), "hop_stage": st["hop_stage"],
            "balance_stage": st["balance_stage"], "restart": st["restart"], "days": s["strength_days"]}
     w["strength"] = strength.sessions_for_week(w, eq, ctx)
     pctx = {"phase": w["phase"], "cutback": w["phase"] == "Cutback", "factor": w["factor"],
-            "ankle_flag": ankle_flag, "last_any_log": st["last_any_log"]}
+            "last_any_log": st["last_any_log"]}
     for sess in w["strength"]:
         day = sess["date"].isoformat()
+        pctx["ankle_flag"] = flagged(sess["date"])
         for ex in sess["exercises"]:
             history = st["by_ex"].get(ex["key"], [])
             ex["suggestion"] = progression.suggest(ex, history, pctx, eq, today=t)
@@ -433,6 +439,8 @@ def snack_toggle(day: str = Form("", alias="date"), item: str = Form("")):
     d = _day(day)
     if d is None:
         return _back("snack", "Not saved: that date isn't valid.")
+    if d > today():
+        return _back("snack", "Not saved: that date is in the future.")
     if item not in SNACK_ITEMS:
         return _back("snack", "Not saved: unknown snack item.")
     db.toggle_snack(d.isoformat(), item)
@@ -444,6 +452,8 @@ def ankle_check(day: str = Form("", alias="date"), worse: str = Form("0"), note:
     d = _day(day)
     if d is None:
         return _back("ankle-check", "Not saved: that date isn't valid.")
+    if d > today():
+        return _back("ankle-check", "Not saved: that date is in the future.")
     db.save_check(d.isoformat(), worse == "1", note)
     return _back("ankle-check")
 

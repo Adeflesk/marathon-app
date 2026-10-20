@@ -324,3 +324,21 @@ def test_time_off_holds_through_the_session(client, monkeypatch):
     a = session(weeks, 9, "A")
     assert exercise(a, "rdl")["suggestion"]["weight"] == 47.5  # still about 80% of 60 kg
     assert exercise(a, "box_squat")["suggestion"]["weight"] == 47.5  # today's log isn't cut by 80% again
+
+
+def test_snack_and_check_reject_future_dates(client, monkeypatch):
+    on(monkeypatch, D0)
+    tomorrow = (D0 + timedelta(days=1)).isoformat()
+    r = client.post("/snack", data={"date": tomorrow, "item": "band_eversion"}, follow_redirects=False)
+    assert r.status_code == 303 and "future" in r.headers["location"]
+    r = client.post("/ankle/check", data={"date": tomorrow, "worse": "1"}, follow_redirects=False)
+    assert r.status_code == 303 and "future" in r.headers["location"]
+    assert db.snacks() == [] and db.checks() == []
+
+
+def test_flag_ending_before_thursday_leaves_it_alone(client, monkeypatch):
+    on(monkeypatch, D0 + timedelta(days=7))  # week 2 Monday
+    db.save_check(D0.isoformat(), True)  # flag up until week 2 Monday
+    _, weeks = main.build_view()
+    assert weeks[0]["ankle_state"]["flag_until"] == D0 + timedelta(days=7)
+    assert session(weeks, 2, "A")["reduced"] is False
