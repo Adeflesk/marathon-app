@@ -153,7 +153,8 @@ def ankle_state(t: date, weeks: list[dict], checkins: list[dict]) -> dict:
         "hop_stage": hop,
         "balance_stage": ankle.balance_stage(t, snacks, tests, checks, hop, logs, checkins, weeks),
         "restart": ankle.restart(t, logs, checks),
-        "last_any_log": date.fromisoformat(logs[0]["date"]) if logs else None,
+        # before today, so logging the first lift doesn't cancel the time-off drop for the rest of the session
+        "last_any_log": next((date.fromisoformat(lg["date"]) for lg in logs if lg["date"] < t.isoformat()), None),
     }
 
 

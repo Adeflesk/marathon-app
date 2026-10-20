@@ -308,3 +308,19 @@ def test_history_on_strength_page(client, monkeypatch):
     h = html[html.index('id="history"'):]
     assert "Barbell Romanian deadlift" in h and "55 kg" in h and "8, 8" in h and "Right" in h and "Easy" in h
     assert "Thu 29 Oct" in h
+
+
+def test_time_off_holds_through_the_session(client, monkeypatch):
+    """Logging the first lift after a long gap doesn't undo the time-off drop for the rest of the session."""
+    thu = D0 + timedelta(weeks=8, days=3)  # week 9 Thursday
+    old = (thu - timedelta(days=42)).isoformat()
+    for key in ("box_squat", "rdl"):
+        db.save_log({"date": old, "exercise": key, "weight_kg": 60, "level": None, "rung": 0, "reps": [8, 8, 8],
+                     "target_reps": 8, "rating": "easy", "ankle_pain": None, "created": ""})
+    on(monkeypatch, thu)
+    db.save_log({"date": thu.isoformat(), "exercise": "box_squat", "weight_kg": 47.5, "level": None, "rung": 0,
+                 "reps": [8, 8], "target_reps": 8, "rating": "right", "ankle_pain": None, "created": ""})
+    _, weeks = main.build_view()
+    a = session(weeks, 9, "A")
+    assert exercise(a, "rdl")["suggestion"]["weight"] == 47.5  # still about 80% of 60 kg
+    assert exercise(a, "box_squat")["suggestion"]["weight"] == 47.5  # today's log isn't cut by 80% again

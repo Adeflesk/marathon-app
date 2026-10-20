@@ -139,7 +139,7 @@ def suggest(ex: dict, history: list[dict], ctx: dict, eq: dict, today: date) -> 
         return out(None, lo, last_rung, "Hop dose follows your hop stage.")
 
     # Rule 2: time off since the last log of any exercise.
-    last_any = ctx.get("last_any_log") or date.fromisoformat(last["date"])
+    last_any = max(ctx.get("last_any_log") or date.min, date.fromisoformat(last["date"]))
     gap = (today - last_any).days
     if gap > 28:
         if last_w is not None:
