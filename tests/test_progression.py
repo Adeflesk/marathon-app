@@ -235,7 +235,7 @@ def test_timed_and_carry_stay_in_range():
     assert (s["reps"], s["rung"], s["level"]) == (40, 0, None)
     assert "40 s" in s["reason"]
     s = run(core, [log(None, [30, 30], "easy", exercise="pallof_press")])
-    assert s["reps"] == 32
+    assert s["reps"] == 40  # easy adds 2 × 5 s
     assert run(ex("hops", "hops", 10, 15), [log(None, [15, 15, 15], "easy", exercise="hops")])["reps"] == 10
 
 
@@ -244,3 +244,35 @@ def test_dumbbell_lower_easy_twice_is_2_5_total():
     k = {"exercise": "reverse_lunge"}
     s = run(lunge, [log(15, [8, 8, 8], "easy", **k), log(13.75, [8, 8, 8], "easy", days_ago=14, **k)])
     assert (s["weight"], s["reps"]) == (17.5, 6)
+
+
+# --- carries and timed holds ---
+
+CARRY = ex("suitcase_carry", "carry", 30, 30, sets=2)
+
+
+def test_carry_has_dumbbell_weights_and_steps_up():
+    assert available_weights(CARRY, eq())[:2] == [2.5, 3.75]
+    s = run(CARRY, [log(20, [30, 30], "right", exercise="suitcase_carry")])
+    assert (s["weight"], s["reps"]) == (21.25, 30)
+    s = run(CARRY, [log(20, [30, 30], "hard", exercise="suitcase_carry")])
+    assert (s["weight"], s["reps"]) == (20, 30)
+
+
+def test_kettlebell_carry_keeps_its_distance():
+    kb = ex("suitcase_carry_kb", "carry", 30, 30, sets=2)
+    assert available_weights(kb, eq()) == [12, 16]
+    s = run(kb, [log(12, [30, 30], "easy", exercise="suitcase_carry_kb")])
+    assert (s["weight"], s["reps"]) == (16, 30)
+
+
+def test_carry_first_time_speaks_in_metres():
+    s = run(CARRY, [])
+    assert s["warmup"] and "30 m" in s["reason"] and "reps" not in s["reason"]
+
+
+def test_timed_holds_move_in_5_s_steps():
+    bal = ex("balance_block", "balance", 30, 45, sets=2)
+    assert run(bal, [log(None, [30, 30], "right", exercise="balance_block")])["reps"] == 35
+    assert run(bal, [log(None, [30, 30], "easy", exercise="balance_block")])["reps"] == 40
+    assert run(bal, [log(None, [40, 40], "easy", exercise="balance_block")])["reps"] == 45
