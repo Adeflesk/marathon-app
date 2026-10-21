@@ -13,6 +13,22 @@ def conn() -> sqlite3.Connection:
     return c
 
 
+def backup_bytes() -> bytes:
+    """A consistent snapshot of the whole database, as the bytes of a SQLite file."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        target = Path(d) / "backup.db"
+        src = sqlite3.connect(DB_PATH)
+        dst = sqlite3.connect(target)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+        return target.read_bytes()
+
+
 def init() -> None:
     with conn() as c:
         c.executescript(

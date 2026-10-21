@@ -356,6 +356,15 @@ def workouts_zip(n: int):
     )
 
 
+@app.get("/backup.db")
+def backup_db():
+    return Response(
+        db.backup_bytes(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="marathon-{date.today().isoformat()}.db"'},
+    )
+
+
 @app.post("/sync")
 def sync_now():
     s = load_settings()
