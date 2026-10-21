@@ -22,6 +22,7 @@ LADDER_TEXT = {2: "3–4 s lowering", 3: "2–3 s pause"}
 
 KB_GATE_REPS = 15  # a kettlebell jump needs an easy rating at this many reps or more
 KB_RESET_REPS = 8
+HOLD_STEP = 5  # seconds or metres added per "aim for", where reps would add 1
 
 
 def _kind(ex: dict) -> str | None:
@@ -32,6 +33,8 @@ def _kind(ex: dict) -> str | None:
         return "dumbbell"
     if load == "kettlebell":
         return "kettlebell"
+    if load == "carry":  # carried in one hand: the bell or dumbbell its equipment calls for
+        return "kettlebell" if "kettlebell" in EXERCISES.get(ex.get("key"), {}).get("needs", ()) else "dumbbell"
     return None
 
 
@@ -108,11 +111,15 @@ def _first_session(ex: dict, eq: dict) -> dict:
     weights = available_weights(ex, eq)
     start = WARMUP_START.get(_kind(ex) or "", [])
     warmup = sorted({_snap_down(w, weights) for w in start}) if weights else []
-    if warmup:
+    unit = UNITS.get(ex.get("role"), "reps")
+    if warmup and unit == "reps":
         reason = (f"First time: warm up with {', '.join(f'{w:g}' for w in warmup)} kg and stop where "
                   f"{ex['lo']} reps leave about 3–4 in the tank. Log that as your working weight.")
+    elif warmup:
+        reason = (f"First time: try {', '.join(f'{w:g}' for w in warmup)} kg for {ex['lo']} {unit} and keep "
+                  f"the heaviest that still feels steady. Log that as your working weight.")
     else:
-        reason = f"First time: aim for {ex['lo']} {UNITS.get(ex.get('role'), 'reps')}, comfortably."
+        reason = f"First time: aim for {ex['lo']} {unit}, comfortably."
     return {"weight": None, "reps": ex["lo"], "rung": 0, "level": None, "warmup": warmup, "reason": reason}
 
 
@@ -167,12 +174,14 @@ def _rate(ex, eq, last, prev, last_w, last_rung, done, rating, phase, ladder, ou
     was = {"easy": "Easy", "right": "Right", "hard": "Hard"}.get(rating, "Logged")
     unit = UNITS.get(ex.get("role"), "reps")
     at = f"at {_kg(last_w)}" if last_w is not None else f"at {done} {unit}"
+    inc = 1 if unit == "reps" else HOLD_STEP
+    kb_reps = _kind(ex) == "kettlebell" and ex.get("load") != "carry"  # the 12 → 16 kg rep gate
 
     def can_up(n):
         """The heavier weight `n` steps up, or None when the ladder has to take over."""
         if last_w is None:
             return None
-        if _kind(ex) == "kettlebell" and not (rating == "easy" and done >= KB_GATE_REPS):
+        if kb_reps and not (rating == "easy" and done >= KB_GATE_REPS):
             return None
         w = step(last_w, ex, eq, n, phase)
         return w if w > last_w else None
@@ -180,7 +189,7 @@ def _rate(ex, eq, last, prev, last_w, last_rung, done, rating, phase, ladder, ou
     def up(n):
         w = can_up(n)
         if w is not None:
-            reps = KB_RESET_REPS if _kind(ex) == "kettlebell" else lo
+            reps = KB_RESET_REPS if kb_reps else lo
             return out(w, reps, 0, f"{was} last time {at}, so {_kg(w)} for {reps}")
         return climb()
 
@@ -222,10 +231,10 @@ def _rate(ex, eq, last, prev, last_w, last_rung, done, rating, phase, ladder, ou
             return up(2 if prev and prev.get("rating") == "easy" else 1)
         if done >= hi - 1 and can_up(1) is not None:
             return up(1)
-        return same(done + 2, "aim for")
+        return same(done + 2 * inc, "aim for")
     if top:
         return up(1)
-    return same(done + 1, "aim for")
+    return same(done + inc, "aim for")
 
 
 def _override(ex, eq, ctx, last, last_w, last_rung, res):

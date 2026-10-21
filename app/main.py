@@ -178,10 +178,10 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date) -> None:
         """The flag is still up on `day`, in a week that isn't over."""
         return flag is not None and day <= flag and end >= t
 
-    thu = w["start"] + timedelta(days=DAYS.index(s["strength_days"]["A"]))
+    a_day = w["start"] + timedelta(days=DAYS.index(s["strength_days"]["A"]))
     q = next((wo for wo in w["workouts"] if "steps" in wo), None)
     wed_bad = bool(q and q.get("review") and q["review"]["verdict"] == "bad")
-    ctx = {"factor": w["factor"], "wed_bad": wed_bad, "ankle_flag": flagged(thu), "hop_stage": st["hop_stage"],
+    ctx = {"factor": w["factor"], "wed_bad": wed_bad, "ankle_flag": flagged(a_day), "hop_stage": st["hop_stage"],
            "balance_stage": st["balance_stage"], "restart": st["restart"], "days": s["strength_days"]}
     w["strength"] = strength.sessions_for_week(w, eq, ctx)
     pctx = {"phase": w["phase"], "cutback": w["phase"] == "Cutback", "factor": w["factor"],
