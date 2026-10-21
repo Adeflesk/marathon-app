@@ -80,15 +80,18 @@ python -m app.pace_engine 10 52:30
   weight and reps. The very first session shows a warm-up ladder to establish your working weight. Enter your
   weights and reps, then tap **Easy**, **Right**, or **Hard** to save. The app steps the load up or down next
   time based on your rating. A break of 11–28 days drops one step; over 28 days resets conservatively (≤ 80%).
+  Carries take the weight you carry too, and step up once the distance feels right. Timed holds and carries
+  move in 5 s or 5 m steps.
 - **Ankle snacks**: short 8–10 minute balance and tendon drills on non-strength days (`ankle_days`: default Mon,
   Wed, Fri, Sat). Ticking snack items advances your balance stage (Stage 1 to 6).
 - **Ankle tests & hop stages**: readiness tests (20-pogo trial, calf raises to fatigue, eyes-closed balance,
   Y-balance, single and triple hops) are scheduled in week 1, the first build week, and cutback weeks. Passing
   tests unlocks plyometric hop stages (Stage 1 low pogos, Stage 2 line/lateral hops, Stage 3 continuous bounds).
 - **Morning check & ankle flag**: the morning after hop or calf work, a quick check asks how the ankle feels.
-  Rating it "Worse than usual", logging ankle pain ≥ 3, or reporting ankle pain ≥ 3 in the weekly check-in
-  raises the **ankle flag** for 7 days: no weight increases on ankle work, Thursday main lifts lose a set, and
-  hop work steps back.
+  Rating it "Worse than usual", logging ankle pain ≥ 3 (or higher than last time on that exercise), or
+  reporting ankle pain ≥ 3 in the weekly check-in raises the **ankle flag** for 7 days: no weight increases on
+  ankle work, Thursday main lifts lose a set if the flag is still up that day, and hop work steps back. Notes on
+  the morning check are kept for you but don't change anything.
 - **Auto-trimming**: sessions lose 1 set during cutback weeks, taper weeks, if your Wednesday run review was "bad",
   or if the weekly check-in trimmed volume. Sessions never drop below 1 set. Race week has no strength sessions.
 
