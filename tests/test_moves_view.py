@@ -117,3 +117,90 @@ def test_moved_run_keeps_own_factor(client, monkeypatch):
     moved = next(wo for wo in weeks[1]["workouts"] if wo.get("moved_from") == SUN)
     assert moved["km"] == 10
     assert sum(wo["km"] for wo in weeks[0]["workouts"]) == weeks[0]["target_km"] == 15
+
+
+# --- Task 4: buttons, the clash warning and the routes ---
+
+def post_move(client, day, session, confirm="", orig=None):
+    data = {"date": day.isoformat(), "session": session, "confirm": confirm}
+    if orig:
+        data["orig"] = orig.isoformat()
+    return client.post("/move", data=data, follow_redirects=False)
+
+
+def test_move_strength_no_clash(client, monkeypatch):
+    on(monkeypatch, THU)
+    r = post_move(client, THU, "A")
+    assert r.status_code == 303 and "confirm" not in r.headers["location"]
+    [m] = db.moves()
+    assert (m["date"], m["session"], m["new_date"]) == ("2026-10-22", "A", "2026-10-23")
+
+
+def test_move_run_onto_long_run_warns(client, monkeypatch):
+    on(monkeypatch, SAT)
+    r = post_move(client, SAT, "run")
+    assert r.status_code == 303 and "confirm=run" in r.headers["location"]
+    assert db.moves() == []
+    page = client.get(r.headers["location"]).text
+    assert "Sunday already has your long run" in page
+    assert "Better to skip Saturday" in page
+    assert 'value="skip"' in page and 'value="move"' in page
+
+
+def test_skip_and_move_anyway(client, monkeypatch):
+    on(monkeypatch, SAT)
+    post_move(client, SAT, "run", confirm="skip")
+    assert db.moves()[0]["new_date"] is None
+    _clear()
+    post_move(client, SAT, "run", confirm="move")
+    assert db.moves()[0]["new_date"] == SUN.isoformat()
+
+
+def test_move_twice_then_undo(client, monkeypatch):
+    on(monkeypatch, THU)
+    post_move(client, THU, "A")
+    on(monkeypatch, FRI)
+    post_move(client, FRI, "A", orig=THU)
+    [m] = db.moves()
+    assert (m["date"], m["new_date"]) == (THU.isoformat(), SAT.isoformat())
+    r = client.post("/move/undo", data={"date": THU.isoformat(), "session": "A"}, follow_redirects=False)
+    assert r.status_code == 303 and db.moves() == []
+    _, weeks = main.build_view()
+    assert next(s for s in weeks[0]["strength"] if s["key"] == "A")["date"] == THU
+
+
+def test_move_rejects_bad_requests(client, monkeypatch):
+    on(monkeypatch, FRI)
+    for day, session in ((THU, "A"), (FRI, "X"), (FRI, "run"), (date(2027, 3, 13), "run"), (FRI, "B")):
+        r = post_move(client, day, session)
+        assert r.status_code == 303 and "msg=" in r.headers["location"], (day, session)
+    r = client.post("/move", data={"date": "nonsense", "session": "run"}, follow_redirects=False)
+    assert r.status_code == 303 and "msg=" in r.headers["location"]
+    assert db.moves() == []
+
+
+def test_no_move_button_once_done(client, monkeypatch):
+    on(monkeypatch, THU)
+    db.save_log({"date": THU.isoformat(), "exercise": "rdl", "weight_kg": 40.0, "reps": [8, 8], "target_reps": 8,
+                 "rating": "right"})
+    page = client.get("/").text
+    assert 'name="session" value="A"' not in page
+    r = post_move(client, THU, "A")
+    assert "msg=" in r.headers["location"] and db.moves() == []
+
+
+def test_buttons_render(client, monkeypatch):
+    on(monkeypatch, THU)
+    page = client.get("/").text
+    assert "Move to tomorrow" in page and 'name="session" value="A"' in page
+    post_move(client, THU, "A")
+    on(monkeypatch, FRI)
+    page = client.get("/").text
+    assert "Moved from Thursday" in page and 'action="/move/undo"' in page
+
+
+def test_skipped_shows_with_undo(client, monkeypatch):
+    on(monkeypatch, SAT)
+    post_move(client, SAT, "run", confirm="skip")
+    page = client.get("/").text
+    assert "Skipped" in page and 'action="/move/undo"' in page

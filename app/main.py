@@ -125,7 +125,10 @@ def build_view():
     # A day with two runs (after a move) is one day: both show its actual, the longer one gets the review.
     planned: dict[date, float] = {}
     lead: dict[date, dict] = {}
+    seen: dict[date, int] = {}
     for wo in (wo for w in weeks for wo in w["workouts"] if not wo.get("skipped")):
+        wo["fit_n"] = seen.get(wo["date"], 0)  # its index for /workout/{day}.fit?n=
+        seen[wo["date"]] = wo["fit_n"] + 1
         planned[wo["date"]] = planned.get(wo["date"], 0) + wo["km"]
         if wo["date"] not in lead or wo["km"] > lead[wo["date"]]["km"]:
             lead[wo["date"]] = wo
@@ -150,7 +153,22 @@ def build_view():
         w["is_current"] = w["start"] <= t < w["start"] + timedelta(days=7)
         w["is_past"] = w["start"] + timedelta(days=7) <= t
     moves.relocate(weeks)  # strength sessions moved across Sunday, keeping their own week's prescription
+    race = race_date(s)
+    for w in weeks:
+        for wo in w["workouts"]:
+            wo["movable"] = _movable(wo, "run", weeks, t, race)
+        for x in w.get("strength", []):
+            x["movable"] = _movable(x, x["key"], weeks, t, race)
     return s, weeks
+
+
+def _movable(item: dict, session: str, weeks: list[dict], t: date, race: date) -> bool:
+    """From today on, not skipped, not done yet (a synced run or any strength log), and tomorrow is allowed."""
+    if item["date"] < t or item.get("skipped") or item.get("type") == "race":
+        return False
+    done = (item.get("actual_km") is not None if session == "run"
+            else any(ex.get("log") for ex in item.get("exercises", [])))
+    return not done and moves.can_move(item["date"], weeks, race)
 
 
 def ankle_state(t: date, weeks: list[dict], checkins: list[dict]) -> dict:
@@ -229,7 +247,7 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict |
 
 
 @app.get("/")
-def dashboard(request: Request, msg: str = ""):
+def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = ""):
     s, weeks = build_view()
     t = today()
     current = next((w for w in weeks if w["is_current"]), None)
@@ -252,6 +270,7 @@ def dashboard(request: Request, msg: str = ""):
     week_end = upcoming["start"] + timedelta(days=6) if upcoming else t
     tests_this_week = {x["test"]: x for x in st["tests"]
                        if upcoming and upcoming["start"].isoformat() <= x["date"] <= week_end.isoformat()}
+    move_warning = _move_warning(weeks, confirm, _day(on), _day(orig))
     profile = {
         "planned": [w["target_km"] for w in weeks],
         "actual": [w["actual_km"] if (w["is_past"] or w["is_current"]) else None for w in weeks],
@@ -280,6 +299,7 @@ def dashboard(request: Request, msg: str = ""):
             "ankle_flag": st["flag_until"],
             "hop_stage": st["hop_stage"],
             "injured_side": s["injured_side"],
+            "move_warning": move_warning,
             "msg": msg,
             "paces": s["paces"],
             "goal": s["goal_time"],
@@ -502,3 +522,56 @@ async def ankle_tests(request: Request):
     for key, injured, other in rows:
         db.save_test(d.isoformat(), key, injured, other)
     return _back("tests")
+
+
+SESSIONS = {"run", "A", "B"}
+
+
+def _session_at(weeks: list[dict], day: date, session: str, orig: date | None = None) -> dict | None:
+    """The non-skipped session of this kind on `day`; `orig` picks one when two runs share the day."""
+    return next((item for kind, item in moves.day_items(weeks, day)
+                 if kind == session and (orig is None or item["orig_date"] == orig)), None)
+
+
+def _move_warning(weeks: list[dict], session: str, day: date | None, orig: date | None) -> dict | None:
+    """The clash warning to show after a Move to tomorrow, if that clash still holds."""
+    if session not in SESSIONS or day is None:
+        return None
+    item = _session_at(weeks, day, session, orig)
+    blocker = moves.clash(weeks, session, day) if item else None
+    if blocker is None:
+        return None
+    kind = "run" if "type" in blocker else blocker["key"]
+    return {"session": session, "date": day, "orig": item["orig_date"], "name": moves.session_name(session, item),
+            "blocker": moves.session_name(kind, blocker), "blocker_day": blocker["date"]}
+
+
+@app.post("/move")
+def move(day: str = Form("", alias="date"), session: str = Form(""), confirm: str = Form(""),
+         orig: str = Form("")):
+    d = _day(day)
+    if d is None or session not in SESSIONS:
+        return _back("week", "Not moved: that isn't a session.")
+    if d < today():
+        return _back("week", "Not moved: that day has passed.")
+    s, weeks = build_view()
+    item = _session_at(weeks, d, session, _day(orig))
+    if item is None:
+        return _back("week", "Not moved: there's no such session that day.")
+    if not item["movable"]:
+        return _back("week", "Not moved: it's done already, or tomorrow is race day or past the plan.")
+    if not confirm and moves.clash(weeks, session, d) is not None:
+        q = urlencode({"confirm": session, "on": d.isoformat(), "orig": item["orig_date"].isoformat()})
+        return RedirectResponse(f"/?{q}#move", status_code=303)
+    new = None if confirm == "skip" else (d + timedelta(days=1)).isoformat()
+    db.save_move(item["orig_date"].isoformat(), session, new)
+    return _back("week")
+
+
+@app.post("/move/undo")
+def move_undo(day: str = Form("", alias="date"), session: str = Form("")):
+    d = _day(day)
+    if d is None or session not in SESSIONS:
+        return _back("week", "Not undone: that isn't a session.")
+    db.delete_move(d.isoformat(), session)
+    return _back("week")

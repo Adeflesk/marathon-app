@@ -1,3 +1,4 @@
+{% import "_ui.html" as ui %}
 {# Cards for This week: the strength checklist, the ankle snack, the morning check and the ankle tests.
    Every form posts without JavaScript and comes back to its own anchor. CSS lives in index.html. #}
 
@@ -38,6 +39,8 @@ last time {% if lg.weight_kg is not none %}{{ kg(lg.weight_kg) }}{% else %}{{ re
     <div class="progress" aria-hidden="true"><i style="width: {{ (100 * done / n)|round(1) if n else 0 }}%"></i></div>
     <p class="mute small" style="margin-top:6px">{{ done }} of {{ n }} done</p>
   </div>
+  {% if session.movable %}<div>{{ ui.move_form(session, session.key, "button quiet") }}</div>{% endif %}
+  {{ ui.moved_note(session, session.key) }}
   {% if session.note %}<p class="notice">{{ session.note }}</p>{% endif %}
   <p class="small"><strong>Warm-up:</strong> {{ session.warmup }}</p>
   <div class="exes">
