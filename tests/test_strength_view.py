@@ -9,7 +9,7 @@ from app.config import load_settings
 from app.plan import generate
 
 D0 = date(2026, 10, 19)  # plan week 1, a Monday
-TABLES = ("strength_logs", "snack_logs", "ankle_tests", "ankle_checks", "checkins", "activities", "run_details")
+TABLES = ("strength_logs", "snack_logs", "ankle_tests", "ankle_checks", "checkins", "activities", "run_details", "moves")
 
 
 def _clear():

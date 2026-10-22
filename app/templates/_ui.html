@@ -23,3 +23,26 @@
   {%- if "rest" in efforts %}<span class="k-rest">Jog recovery</span>{% endif %}
 </p>
 {%- endmacro %}
+
+{# Move to tomorrow, and the Moved/Skipped note with Undo. `session` is "run", "A" or "B". #}
+{% macro move_form(item, session, cls="linkish") -%}
+<form method="post" action="/move" class="inline">
+  <input type="hidden" name="date" value="{{ item.date.isoformat() }}">
+  <input type="hidden" name="orig" value="{{ item.orig_date.isoformat() }}">
+  <input type="hidden" name="session" value="{{ session }}">
+  <button class="{{ cls }}" type="submit">Move to tomorrow</button>
+</form>
+{%- endmacro %}
+
+{% macro moved_note(item, session) -%}
+{% set label = 'Skipped' if item.skipped else 'Moved from ' ~ item.moved_from.strftime('%A') if item.moved_from %}
+{% if label and item.done %}<span class="mute">{{ label }}.</span>
+{% elif label %}
+<form method="post" action="/move/undo" class="inline">
+  <input type="hidden" name="date" value="{{ item.orig_date.isoformat() }}">
+  <input type="hidden" name="session" value="{{ session }}">
+  <span class="mute">{{ label }}.</span>
+  <button class="linkish" type="submit">Undo</button>
+</form>
+{% endif %}
+{%- endmacro %}

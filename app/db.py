@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 DB_PATH = os.environ.get("DB_PATH", str(Path(__file__).resolve().parent.parent / "data" / "marathon.db"))
@@ -83,6 +84,13 @@ def init() -> None:
                 worse INTEGER NOT NULL,
                 note TEXT DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS moves (
+                date TEXT NOT NULL,
+                session TEXT NOT NULL,
+                new_date TEXT,
+                created TEXT,
+                PRIMARY KEY (date, session)
+            );
             """
         )
 
@@ -149,3 +157,20 @@ def save_check(day: str, worse: bool, note: str = "") -> None:
 def checks() -> list[dict]:
     with conn() as c:
         return [dict(r) for r in c.execute("SELECT * FROM ankle_checks ORDER BY date")]
+
+
+def save_move(day: str, session: str, new_date: str | None) -> None:
+    """A session ("run", "A" or "B") planned on `day` moved to `new_date`, or skipped when it is None."""
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO moves (date, session, new_date, created) VALUES (?,?,?,?)",
+                  (day, session, new_date, datetime.now().isoformat(timespec="seconds")))
+
+
+def delete_move(day: str, session: str) -> None:
+    with conn() as c:
+        c.execute("DELETE FROM moves WHERE date = ? AND session = ?", (day, session))
+
+
+def moves() -> list[dict]:
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM moves ORDER BY date, session")]

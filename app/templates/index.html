@@ -22,6 +22,15 @@
   .days .km { text-align: right; font-weight: 650; }
   .days .km small { display: block; font-weight: 400; font-size: .8125rem; }
   .days li.is-today .d { box-shadow: inset 3px 0 var(--ink); padding-left: 8px; }
+  .days .moves { grid-column: 2 / -1; font-size: .8125rem; display: flex; flex-wrap: wrap; gap: 0 14px; }
+  .days li.skipped .what, .days li.skipped .km { color: var(--mute); }
+  .days li.skipped .band { opacity: .4; }
+  form.inline { display: inline; }
+  .linkish { font: inherit; color: var(--ink); background: none; border: 0; padding: 10px 0; margin: 0;
+             text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .strength-days { list-style: none; margin: 12px 0 0; padding: 0; }
+  .strength-days li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 14px; }
+  .strength-days form { font-size: .8125rem; }
 
   .scale { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 4px; border: 0; padding: 0; margin: 0; }
   .scale legend { font-weight: 600; margin-bottom: 8px; padding: 0; grid-column: 1 / -1; }
@@ -110,6 +119,24 @@
 {% endblock %}
 {% block body %}
 {% if msg %}<p class="notice" role="status">{{ msg }}</p>{% endif %}
+{% if move_warning %}{% set mw = move_warning %}
+<section class="notice stack" id="move" role="alert" style="margin-top:12px">
+  <p><strong>{{ mw.blocker_day.strftime('%A') }} already has your {{ mw.blocker }}.</strong>
+    Better to skip {{ mw.date.strftime('%A') }}'s {{ mw.name }} than stack them.</p>
+  <div class="actions">
+    {% for value, word in (("skip", "Skip it"), ("move", "Move anyway")) %}
+    <form method="post" action="/move" class="inline">
+      <input type="hidden" name="date" value="{{ mw.date.isoformat() }}">
+      <input type="hidden" name="orig" value="{{ mw.orig.isoformat() }}">
+      <input type="hidden" name="session" value="{{ mw.session }}">
+      <input type="hidden" name="confirm" value="{{ value }}">
+      <button class="button{{ ' quiet' if value == 'move' }}" type="submit">{{ word }}</button>
+    </form>
+    {% endfor %}
+    <a class="linkish" href="/">Keep it on {{ mw.date.strftime('%A') }}</a>
+  </div>
+</section>
+{% endif %}
 {% if ankle_flag %}<p class="notice" style="margin-top:12px">Ankle flag until {{ ankle_flag.strftime('%A %-d %B') }}: no increases on ankle work.</p>{% endif %}
 
 {% if morning_check %}{{ sx.morning_check(today) }}{% endif %}
@@ -133,14 +160,17 @@
   <p class="done-line">Done: {{ next_run.actual_km|km }} km at {{ next_run.actual_pace|pace }}/km{% if next_run.compliance is not none %}, {{ next_run.compliance }}% of plan{% endif %}.</p>
   {% endif %}
   <div class="actions">
-    <a class="button" href="/workout/{{ next_run.date.isoformat() }}.fit">Download for the watch</a>
+    <a class="button" href="/workout/{{ next_run.date.isoformat() }}.fit?n={{ next_run.fit_n }}">Download for the watch</a>
+    {% if next_run.movable %}{{ ui.move_form(next_run, "run", "button quiet") }}{% endif %}
   </div>
+  {{ ui.moved_note(next_run, "run") }}
 </section>
 {% elif not strength_hero %}
 <section class="hero"><h1 class="display" style="font-size:3.5rem">Race done.</h1><p class="note">No more runs in the plan.</p></section>
 {% endif %}
 
 {% if strength_session and not strength_hero %}{{ sx.strength_card(strength_session, today) }}{% endif %}
+{% for extra in strength_sessions[1:] %}{{ sx.strength_card(extra, today, false, "strength-" ~ extra.key) }}{% endfor %}
 {% if tests_due %}{{ sx.test_card(today, tests, injured_side) }}{% endif %}
 {% if snack_today %}{{ sx.snack_card(snack_today) }}{% endif %}
 
@@ -184,7 +214,7 @@
   {% set longest = week.workouts|map(attribute='km')|max %}
   <ul class="days">
     {% for w in week.workouts %}
-    <li class="{{ 'is-today' if w.date == today }}">
+    <li class="{{ 'is-today' if w.date == today }}{{ ' skipped' if w.skipped }}">
       <span class="d">{{ w.date.strftime('%a') }}<small>{{ w.date.strftime('%-d %b') }}</small></span>
       <span class="what">
         {{ ui.TYPE_NAMES.get(w.type, w.type) }}
@@ -192,17 +222,27 @@
       </span>
       <span class="km">{{ w.km|km }} km
         <small>
-        {%- if w.actual_km is not none %}<span class="{{ 'good' if w.compliance is not none and w.compliance >= 90 else 'warn' if w.compliance is not none and w.compliance >= 70 else 'bad' }}">{{ w.actual_km|km }} done</span>
+        {%- if w.skipped %}<span class="mute">skipped</span>
+        {%- elif w.actual_km is not none %}<span class="{{ 'good' if w.compliance is not none and w.compliance >= 90 else 'warn' if w.compliance is not none and w.compliance >= 70 else 'bad' }}">{{ w.actual_km|km }} done</span>
         {%- elif w.past %}<span class="mute">missed</span>
-        {%- elif w.km > 0 %}<a href="/workout/{{ w.date.isoformat() }}.fit">.fit file</a>{% endif -%}
+        {%- elif w.km > 0 %}<a href="/workout/{{ w.date.isoformat() }}.fit?n={{ w.fit_n }}">.fit file</a>{% endif -%}
         </small>
       </span>
       {% if w.review %}<span class="verdict v-{{ w.review.verdict }}">{{ w.review.headline }}</span>{% endif %}
+      {% if w.skipped or w.moved_from or w.movable %}
+      <span class="moves">{{ ui.moved_note(w, "run") }}{% if w.movable %}{{ ui.move_form(w, "run") }}{% endif %}</span>
+      {% endif %}
     </li>
     {% endfor %}
   </ul>
   {% if week.strength %}
-  <p class="mute" style="margin-top:12px">Strength on {% for x in week.strength %}{{ x.date.strftime('%A') }}{{ ' and ' if not loop.last }}{% endfor %}. <a href="/strength?week={{ week.week }}">See the sessions</a>.</p>
+  <ul class="strength-days">
+    {% for x in week.strength %}
+    <li><span{{ ' class="mute"' if x.skipped }}><strong>{{ x.date.strftime('%A') }}:</strong> Strength {{ x.key }}</span>
+      {{ ui.moved_note(x, x.key) }}{% if x.movable and x.date != today %}{{ ui.move_form(x, x.key) }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+  <p class="mute" style="margin-top:4px"><a href="/strength?week={{ week.week }}">See the strength sessions</a>.</p>
   {% endif %}
   <div class="actions" style="margin-top:18px">
     <form method="post" action="/sync"><button class="button" type="submit">Sync from Smashrun</button></form>
