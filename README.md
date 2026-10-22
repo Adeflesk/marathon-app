@@ -95,6 +95,18 @@ python -m app.pace_engine 10 52:30
 - **Auto-trimming**: sessions lose 1 set during cutback weeks, taper weeks, if your Wednesday run review was "bad",
   or if the weekly check-in trimmed volume. Sessions never drop below 1 set. Race week has no strength sessions.
 
+## Moving a session
+
+Life gets in the way. Any run or strength session from today on has a **Move to tomorrow** button: on
+today's card, and in the week list. The session moves one day, and its watch file, logging and run review move
+with it. Tap it again to push it another day.
+
+If tomorrow already has a long run or a speed session, or you're moving a run onto another run day, or a
+strength session onto the other strength day, the app warns you and suggests skipping the missed session
+instead of stacking the two. **Skip it** marks it skipped: it comes off the week's planned km and doesn't count
+as missed. **Move anyway** moves it regardless. Moved and skipped sessions show **Undo**. A session you've
+already done, or one whose next day is race day, can't be moved.
+
 ## Garmin Forerunner 255
 
 Each run in the week table has a "Garmin .fit" link, and "Garmin files for the week" gives a zip of the

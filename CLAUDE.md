@@ -76,10 +76,16 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   - Replays logs, tests, and checks to determine `hop_stage` (0–3), `balance_stage` (0–6), and `test_weeks` (weeks 1, 4, 7, 11, 15).
   - Manages `flag_until`: raises 7-day ankle flag on morning check "worse than usual", ankle pain ≥ 3 on ankle items, or weekly check-in pain ≥ 3.
   - Identifies when morning check is due and when readiness tests are due.
+- `app/moves.py` — pure: applies the user's moved/skipped sessions to the generated plan. `shift()` marks an
+  item (`orig_date`, then `moved_from` + new `date`, or `skipped`); `relocate()` puts items moved past Sunday
+  into the next week; `clash()` holds the warning rules; `can_move()` stops at race day and the plan's end.
 - `app/main.py` — `build_view()` is the hub every page uses: generate plan → apply the *previous* week's
-  check-in factor → join actual runs from SQLite by date → compute ankle context and attach strength sessions, suggestions, and snacks.
-  Routes: `/`, `/plan`, `/strength`, `/equipment` (GET/POST), `/workout/{date}.fit`,
-  `/workouts/week/{n}.zip`, `/sync`, `/checkin`, `/strength/log` (POST), `/snack` (POST), `/ankle/check` (POST), `/ankle/tests` (POST).
+  check-in factor → shift and relocate moved runs → join actual runs from SQLite by date (a day with two runs
+  shares its actual; the longer run gets the review) → compute ankle context and attach strength sessions
+  (shifted before logs are looked up), suggestions, and snacks → relocate strength → mark `movable`.
+  Routes: `/`, `/plan`, `/strength`, `/equipment` (GET/POST), `/workout/{date}.fit?n=`,
+  `/workouts/week/{n}.zip`, `/sync`, `/checkin`, `/strength/log` (POST), `/snack` (POST), `/ankle/check` (POST),
+  `/ankle/tests` (POST), `/move` (POST; warns via `/?confirm=…` on a clash), `/move/undo` (POST).
   POSTs redirect with a 303 to their anchor.
 - `app/garmin.py` — builds FIT workout files with `fit-tool`; pace targets are speed ranges (m/s) around
   `settings.paces`. Repeat blocks become a `REPEAT_UNTIL_STEPS_CMPLT` step after their steps, pointing back
@@ -96,7 +102,8 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   workout whose day has a synced run with details (the day's longest run).
 - `app/db.py` — tables: `activities` (synced runs), `run_details` (JSON km splits and laps per run),
   `checkins` (keyed by week number), `strength_logs` (logged sets, weight, reps, rating, ankle pain),
-  `snack_logs` (daily ankle snack ticks), `ankle_tests` (readiness test values), and `ankle_checks` (morning ankle checks).
+  `snack_logs` (daily ankle snack ticks), `ankle_tests` (readiness test values), `ankle_checks` (morning ankle checks),
+  and `moves` (a session's original date + `run`/`A`/`B` → new date, or NULL when skipped).
   Schema is `CREATE IF NOT EXISTS` on startup; there are no migrations. `DB_PATH` env var overrides `data/marathon.db`.
 
 ## Conventions
