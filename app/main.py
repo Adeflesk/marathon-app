@@ -11,7 +11,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from . import ankle, db, garmin, progression, review, smashrun, strength
+from . import ankle, db, garmin, moves, progression, review, smashrun, strength
 from .config import load_settings, race_date
 from .pace_engine import fmt_pace, fmt_time, pace_per_mi
 from .plan import DAYS, _half, feedback_factor, generate
@@ -108,33 +108,48 @@ def build_view():
         checkins = {r["week"]: dict(r) for r in c.execute("SELECT * FROM checkins")}
     t = today()
     st = ankle_state(t, weeks, list(checkins.values()))
+    moved = moves.index(db.moves())
+    # Each run is scaled by its own week's check-in, then follows any move (relocate takes it across Sunday).
     for w in weeks:
         factor = feedback_factor(checkins.get(w["week"] - 1))
         w["factor"] = factor
         w["checkin"] = checkins.get(w["week"])
-        wk_actual = 0.0
         for wo in w["workouts"]:
             if factor != 1.0 and wo["type"] != "race":
                 if "steps" in wo:  # fewer reps, so the day, the note and the .fit all agree
                     scale_session(wo, factor, s["paces"])
                 else:
                     wo["km"] = _half(wo["km"] * factor)
-            a = actual.get(wo["date"].isoformat())
+            moves.shift(wo, "run", moved)
+    moves.relocate(weeks)
+    # A day with two runs (after a move) is one day: both show its actual, the longer one gets the review.
+    planned: dict[date, float] = {}
+    lead: dict[date, dict] = {}
+    for wo in (wo for w in weeks for wo in w["workouts"] if not wo.get("skipped")):
+        planned[wo["date"]] = planned.get(wo["date"], 0) + wo["km"]
+        if wo["date"] not in lead or wo["km"] > lead[wo["date"]]["km"]:
+            lead[wo["date"]] = wo
+    for w in weeks:
+        wk_actual = 0.0
+        for wo in w["workouts"]:
+            a = None if wo.get("skipped") else actual.get(wo["date"].isoformat())
+            day_km = planned.get(wo["date"], 0)
             wo["actual_km"] = round(a["km"], 1) if a else None
             wo["actual_pace"] = (a["seconds"] / a["km"]) if a and a["km"] else None
-            wo["compliance"] = round(100 * a["km"] / wo["km"]) if a and wo["km"] else None
+            wo["compliance"] = round(100 * a["km"] / day_km) if a and day_km else None
             wo["past"] = wo["date"] < t
-            detail = details.get(a["main"]["id"]) if a else None
+            detail = details.get(a["main"]["id"]) if a and lead.get(wo["date"]) is wo else None
             wo["review"] = review.review(wo, a["main"], detail, s["paces"]) if detail else None
-        w["target_km"] = round(sum(wo["km"] for wo in w["workouts"]), 1)
+        w["target_km"] = round(sum(wo["km"] for wo in w["workouts"] if not wo.get("skipped")), 1)
         for i in range(7):
             d = (w["start"] + timedelta(days=i)).isoformat()
             if d in actual:
                 wk_actual += actual[d]["km"]
         w["actual_km"] = round(wk_actual, 1)
-        attach_strength(w, s, eq, st, t)
+        attach_strength(w, s, eq, st, t, moved)
         w["is_current"] = w["start"] <= t < w["start"] + timedelta(days=7)
         w["is_past"] = w["start"] + timedelta(days=7) <= t
+    moves.relocate(weeks)  # strength sessions moved across Sunday, keeping their own week's prescription
     return s, weeks
 
 
@@ -169,7 +184,7 @@ def weight_range(weights: list[float]) -> dict | None:
     return {"min": lo, "max": weights[-1], "step": step / 100 if step else "any"}
 
 
-def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date) -> None:
+def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict | None = None) -> None:
     """Strength sessions with suggestions and logs, and the ankle snacks, for one week."""
     end = w["start"] + timedelta(days=6)
     flag = st["flag_until"]
@@ -187,6 +202,8 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date) -> None:
     pctx = {"phase": w["phase"], "cutback": w["phase"] == "Cutback", "factor": w["factor"],
             "last_any_log": st["last_any_log"]}
     for sess in w["strength"]:
+        moves.shift(sess, sess["key"], moved or {})
+        sess["day"] = sess["date"].strftime("%a")
         day = sess["date"].isoformat()
         pctx["ankle_flag"] = flagged(sess["date"])
         for ex in sess["exercises"]:
@@ -220,10 +237,12 @@ def dashboard(request: Request, msg: str = ""):
     days_left = (race_date(s) - t).days
     # the next run from today on, and any strength session today
     next_run = next((wo for w in weeks for wo in w["workouts"]
-                     if wo["km"] > 0 and (wo["date"] > t or (wo["date"] == t and wo["actual_km"] is None))), None)
+                     if wo["km"] > 0 and not wo.get("skipped")
+                     and (wo["date"] > t or (wo["date"] == t and wo["actual_km"] is None))), None)
     done = [wo for w in weeks for wo in w["workouts"] if wo.get("review") and wo["date"] <= t]
     last_run = done[-1] if done else None
-    strength_today = next((x for x in (upcoming or {}).get("strength", []) if x["date"] == t), None)
+    strength_today = next((x for w in weeks for x in w.get("strength", [])
+                           if x["date"] == t and not x.get("skipped")), None)
     st = weeks[0]["ankle_state"]
     snack_today = (upcoming or {}).get("snack", {}).get(t)
     tests_due = bool(upcoming) and ankle.tests_due(upcoming, weeks, st["tests"])
@@ -322,18 +341,16 @@ def equipment_save(
     return RedirectResponse("/equipment?saved=1", status_code=303)
 
 
-def _find_workout(day: str):
+def _find_workout(day: str, n: int = 0):
+    """The `n`th run planned on `day` (two can share a day after a move), skipped ones left out."""
     s, weeks = build_view()
-    for w in weeks:
-        for wo in w["workouts"]:
-            if wo["date"].isoformat() == day:
-                return s, wo
-    return s, None
+    runs = [wo for w in weeks for wo in w["workouts"] if wo["date"].isoformat() == day and not wo.get("skipped")]
+    return s, runs[n] if 0 <= n < len(runs) else None
 
 
 @app.get("/workout/{day}.fit")
-def workout_fit(day: str):
-    s, wo = _find_workout(day)
+def workout_fit(day: str, n: int = 0):
+    s, wo = _find_workout(day, n)
     if not wo or wo["km"] <= 0:
         return Response(status_code=404)
     return Response(

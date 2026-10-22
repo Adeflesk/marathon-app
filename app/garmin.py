@@ -137,7 +137,12 @@ def filename(w: dict) -> str:
 def week_zip(workouts: list[dict], paces: dict) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        seen: set[str] = set()
         for w in workouts:
-            if w["km"] > 0:
-                z.writestr(filename(w), build_fit(w, paces))
+            if w["km"] > 0 and not w.get("skipped"):
+                name = filename(w)
+                if name in seen:  # two runs alike on one day, after a move
+                    name = name.replace(".fit", "-2.fit")
+                seen.add(name)
+                z.writestr(name, build_fit(w, paces))
     return buf.getvalue()
