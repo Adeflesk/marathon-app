@@ -28,7 +28,7 @@ def shift(item: dict, session: str, moved: dict) -> None:
 
 
 def relocate(weeks) -> None:
-    """Put workouts and strength sessions moved past their week's Sunday into the week holding their new date."""
+    """Put sessions moved past their week's Sunday into the week holding their new date; keep every week in date order."""
     for field in ("workouts", "strength"):
         for w in weeks:
             end = w["start"] + timedelta(days=6)
@@ -39,7 +39,9 @@ def relocate(weeks) -> None:
                     continue
                 w[field].remove(x)
                 home.setdefault(field, []).append(x)
-                home[field].sort(key=lambda y: y["date"])
+    for w in weeks:  # a move within a week can pass another day's session too
+        for field in ("workouts", "strength"):
+            w.get(field, []).sort(key=lambda y: y["date"])
 
 
 def day_items(weeks, day: date) -> list[tuple[str, dict]]:

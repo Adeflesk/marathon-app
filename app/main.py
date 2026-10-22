@@ -155,20 +155,18 @@ def build_view():
     moves.relocate(weeks)  # strength sessions moved across Sunday, keeping their own week's prescription
     race = race_date(s)
     for w in weeks:
-        for wo in w["workouts"]:
-            wo["movable"] = _movable(wo, "run", weeks, t, race)
-        for x in w.get("strength", []):
-            x["movable"] = _movable(x, x["key"], weeks, t, race)
+        for kind, item in [("run", wo) for wo in w["workouts"]] + [(x["key"], x) for x in w.get("strength", [])]:
+            item["done"] = (item.get("actual_km") is not None if kind == "run"
+                            else any(ex.get("log") for ex in item.get("exercises", [])))
+            item["movable"] = _movable(item, weeks, t, race)
     return s, weeks
 
 
-def _movable(item: dict, session: str, weeks: list[dict], t: date, race: date) -> bool:
+def _movable(item: dict, weeks: list[dict], t: date, race: date) -> bool:
     """From today on, not skipped, not done yet (a synced run or any strength log), and tomorrow is allowed."""
-    if item["date"] < t or item.get("skipped") or item.get("type") == "race":
+    if item["date"] < t or item.get("skipped") or item.get("type") == "race" or item["done"]:
         return False
-    done = (item.get("actual_km") is not None if session == "run"
-            else any(ex.get("log") for ex in item.get("exercises", [])))
-    return not done and moves.can_move(item["date"], weeks, race)
+    return moves.can_move(item["date"], weeks, race)
 
 
 def ankle_state(t: date, weeks: list[dict], checkins: list[dict]) -> dict:
@@ -259,8 +257,8 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
                      and (wo["date"] > t or (wo["date"] == t and wo["actual_km"] is None))), None)
     done = [wo for w in weeks for wo in w["workouts"] if wo.get("review") and wo["date"] <= t]
     last_run = done[-1] if done else None
-    strength_today = next((x for w in weeks for x in w.get("strength", [])
-                           if x["date"] == t and not x.get("skipped")), None)
+    strength_sessions = [x for w in weeks for x in w.get("strength", []) if x["date"] == t and not x.get("skipped")]
+    strength_today = strength_sessions[0] if strength_sessions else None  # two only after a Move anyway
     st = weeks[0]["ankle_state"]
     snack_today = (upcoming or {}).get("snack", {}).get(t)
     tests_due = bool(upcoming) and ankle.tests_due(upcoming, weeks, st["tests"])
@@ -292,6 +290,7 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
             "last_run": last_run,
             "strength_today": strength_today,
             "strength_session": strength_today,
+            "strength_sessions": strength_sessions,
             "snack_today": snack_today,
             "morning_check": ankle.morning_check_due(t, st["logs"], st["checks"]),
             "tests_due": tests_due,
@@ -573,5 +572,10 @@ def move_undo(day: str = Form("", alias="date"), session: str = Form("")):
     d = _day(day)
     if d is None or session not in SESSIONS:
         return _back("week", "Not undone: that isn't a session.")
+    s, weeks = build_view()
+    items = [wo for w in weeks for wo in w["workouts"]] if session == "run" else \
+        [x for w in weeks for x in w.get("strength", []) if x["key"] == session]
+    if any(x["orig_date"] == d and x["done"] for x in items):
+        return _back("week", "Not undone: it's done on its new day, so it stays there.")
     db.delete_move(d.isoformat(), session)
     return _back("week")

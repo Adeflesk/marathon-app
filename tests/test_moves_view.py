@@ -204,3 +204,32 @@ def test_skipped_shows_with_undo(client, monkeypatch):
     post_move(client, SAT, "run", confirm="skip")
     page = client.get("/").text
     assert "Skipped" in page and 'action="/move/undo"' in page
+
+
+# --- final review fixes ---
+
+def test_no_undo_once_done(client, monkeypatch):
+    on(monkeypatch, FRI)
+    db.save_move(THU.isoformat(), "A", FRI.isoformat())
+    db.save_log({"date": FRI.isoformat(), "exercise": "rdl", "weight_kg": 40.0, "reps": [8, 8], "target_reps": 8,
+                 "rating": "right"})
+    assert 'action="/move/undo"' not in client.get("/").text
+    r = client.post("/move/undo", data={"date": THU.isoformat(), "session": "A"}, follow_redirects=False)
+    assert "msg=" in r.headers["location"]
+    assert len(db.moves()) == 1
+
+
+def test_two_strength_sessions_one_day_both_cards(client, monkeypatch):
+    on(monkeypatch, THU)
+    db.save_move("2026-10-20", "B", THU.isoformat())  # Tuesday's B moved anyway onto Thursday's A
+    page = client.get("/")
+    assert [x["key"] for x in page.context["strength_sessions"]] == ["B", "A"]
+    assert 'id="ex-rdl"' in page.text and 'id="ex-sl_rdl_db"' in page.text
+
+
+def test_days_stay_in_order_after_moves(client, monkeypatch):
+    on(monkeypatch, date(2026, 10, 19))
+    db.save_move("2026-10-19", "run", "2026-10-22")  # Monday's run, now after Wednesday's
+    _, weeks = main.build_view()
+    dates = [wo["date"] for wo in weeks[0]["workouts"]]
+    assert dates == sorted(dates)

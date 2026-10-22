@@ -170,6 +170,7 @@
 {% endif %}
 
 {% if strength_session and not strength_hero %}{{ sx.strength_card(strength_session, today) }}{% endif %}
+{% for extra in strength_sessions[1:] %}{{ sx.strength_card(extra, today, false, "strength-" ~ extra.key) }}{% endfor %}
 {% if tests_due %}{{ sx.test_card(today, tests, injured_side) }}{% endif %}
 {% if snack_today %}{{ sx.snack_card(snack_today) }}{% endif %}
 

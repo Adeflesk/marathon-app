@@ -22,16 +22,16 @@
 last time {% if lg.weight_kg is not none %}{{ kg(lg.weight_kg) }}{% else %}{{ reps_text(lg.reps, unit_of(ex)) }}{% endif %}, felt {{ lg.rating }}
 {%- endmacro %}
 
-{% macro strength_card(session, today, hero=false) %}
+{% macro strength_card(session, today, hero=false, anchor="strength") %}
 {% set title, _, kind = session.name.partition(": ") %}
 {% set n = session.exercises|length %}
 {% set done = session.exercises|selectattr("log")|list|length %}
 {% set ns = namespace(open=none) %}
 {% for ex in session.exercises %}{% if ns.open is none and not ex.log %}{% set ns.open = loop.index0 %}{% endif %}{% endfor %}
 {% set h = "h1" if hero else "h2" %}
-<section class="strength stack{{ ' hero' if hero }}" id="strength" aria-labelledby="strength-h">
+<section class="strength stack{{ ' hero' if hero }}" id="{{ anchor }}" aria-labelledby="{{ anchor }}-h">
   {% if hero %}<p class="when">Today, {{ today.strftime('%A %-d %B') }}</p>{% endif %}
-  <{{ h }} id="strength-h">
+  <{{ h }} id="{{ anchor }}-h">
     <span class="title">{{ title }}</span>
     <span class="kind">{{ kind[:1]|upper ~ kind[1:] }}, about {{ session.minutes }} minutes</span>
   </{{ h }}>
