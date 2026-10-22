@@ -83,6 +83,24 @@ This week, it logs against Friday, and Saturday morning asks the ankle check as 
 - **The warning** is a page state after the POST (e.g. the redirect carries what to confirm), with the two
   buttons as forms. Nothing is stored until the user picks one.
 
+### Settled after the builder check (Claude's calls)
+
+1. **Two runs on one day after Move anyway.** The day is treated as one: each run on that day shows the day's
+   combined actual against the day's combined planned km, and the review attaches to the longer planned run.
+   The single-file route gains a way to tell the two apart (e.g. a type or index in the URL), and the zip gives
+   each its own file name.
+2. **Skip appears only in the clash warning**, not as a button on every session. A skip can be undone like a
+   move.
+3. **A skipped run's km drop out of its week's target**, so the week doesn't show as short. They also drop out of
+   the planned bar in the volume profile. A moved run's km count in whichever week its new date falls in.
+4. **A strength session landing on the other strength session's day warns too.** It's stacking, which the
+   anti-goal rules out, and it's the same warning: advise skipping the missed session.
+5. **Crossing Sunday into Monday.** A moved session keeps its own week's prescription *and* its own week's
+   check-in factor. A run is scaled before it moves. A strength session moved into the next week goes into
+   that week's strength list, so the dashboard finds it, but keeps the prescription it was built with.
+6. **No moves onto race day or past the plan's last day.** The button doesn't show when tomorrow is race day or
+   outside the plan, and the route refuses such a move.
+
 ## Left to the builder
 
 - Table and column names, and the route names (e.g. `POST /move`, `POST /move/undo`).
