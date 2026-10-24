@@ -233,3 +233,15 @@ def test_days_stay_in_order_after_moves(client, monkeypatch):
     _, weeks = main.build_view()
     dates = [wo["date"] for wo in weeks[0]["workouts"]]
     assert dates == sorted(dates)
+
+
+# --- past sessions keep the stages they had on their day ---
+
+def test_past_session_has_no_hops_unlocked_later(client, monkeypatch):
+    on(monkeypatch, SAT)
+    db.save_test(THU.isoformat(), "pogo_trial", 0, None)  # passes; hop stage 0 from Friday
+    _, weeks = main.build_view()
+    week1_a = next(s for s in weeks[0]["strength"] if s["key"] == "A")
+    week2_a = next(s for s in weeks[1]["strength"] if s["key"] == "A")
+    assert "hops" not in [e["key"] for e in week1_a["exercises"]]  # Thursday: not unlocked yet
+    assert "hops" in [e["key"] for e in week2_a["exercises"]]

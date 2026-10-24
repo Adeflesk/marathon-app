@@ -149,7 +149,7 @@ def build_view():
             if d in actual:
                 wk_actual += actual[d]["km"]
         w["actual_km"] = round(wk_actual, 1)
-        attach_strength(w, s, eq, st, t, moved)
+        attach_strength(w, s, eq, st, t, moved, weeks)
         w["is_current"] = w["start"] <= t < w["start"] + timedelta(days=7)
         w["is_past"] = w["start"] + timedelta(days=7) <= t
     moves.relocate(weeks)  # strength sessions moved across Sunday, keeping their own week's prescription
@@ -177,7 +177,7 @@ def ankle_state(t: date, weeks: list[dict], checkins: list[dict]) -> dict:
     for lg in logs:  # newest first, as db.logs() returns them
         by_ex.setdefault(lg["exercise"], []).append(lg)
     return {
-        "logs": logs, "checks": checks, "tests": tests, "snacks": snacks,
+        "logs": logs, "checks": checks, "tests": tests, "snacks": snacks, "checkins": checkins,
         "by_key": {(lg["date"], lg["exercise"]): lg for lg in logs},
         "by_ex": by_ex,
         "flag_until": ankle.flag_until(t, checks, logs, checkins, weeks),
@@ -200,7 +200,8 @@ def weight_range(weights: list[float]) -> dict | None:
     return {"min": lo, "max": weights[-1], "step": step / 100 if step else "any"}
 
 
-def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict | None = None) -> None:
+def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict | None = None,
+                    weeks: list[dict] | None = None) -> None:
     """Strength sessions with suggestions and logs, and the ankle snacks, for one week."""
     end = w["start"] + timedelta(days=6)
     flag = st["flag_until"]
@@ -209,11 +210,23 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict |
         """The flag is still up on `day`, in a week that isn't over."""
         return flag is not None and day <= flag and end >= t
 
-    a_day = w["start"] + timedelta(days=DAYS.index(s["strength_days"]["A"]))
+    def on(key: str) -> date:
+        """The day a strength session actually falls on, after any move."""
+        planned = w["start"] + timedelta(days=DAYS.index(s["strength_days"][key]))
+        return (moved or {}).get((planned, key)) or planned
+
+    # A past session keeps the hop and balance stages it had on its day, so unlocking hops later doesn't
+    # rewrite it; today's and future sessions use today's stages.
+    a_day, b_day = on("A"), on("B")
+    hop_a, hop_b = (st["hop_stage"] if d >= t else ankle.hop_stage(d, st["tests"], st["checks"], st["logs"],
+                                                                     st["checkins"], weeks or [w])
+                    for d in (a_day, b_day))
+    balance = st["balance_stage"] if b_day >= t else ankle.balance_stage(
+        b_day, st["snacks"], st["tests"], st["checks"], hop_b, st["logs"], st["checkins"], weeks or [w])
     q = next((wo for wo in w["workouts"] if "steps" in wo), None)
     wed_bad = bool(q and q.get("review") and q["review"]["verdict"] == "bad")
-    ctx = {"factor": w["factor"], "wed_bad": wed_bad, "ankle_flag": flagged(a_day), "hop_stage": st["hop_stage"],
-           "balance_stage": st["balance_stage"], "restart": st["restart"], "days": s["strength_days"]}
+    ctx = {"factor": w["factor"], "wed_bad": wed_bad, "ankle_flag": flagged(a_day), "hop_stage": hop_a,
+           "balance_stage": balance, "restart": st["restart"], "days": s["strength_days"]}
     w["strength"] = strength.sessions_for_week(w, eq, ctx)
     pctx = {"phase": w["phase"], "cutback": w["phase"] == "Cutback", "factor": w["factor"],
             "last_any_log": st["last_any_log"]}
