@@ -64,7 +64,7 @@ def test_trim_notice_links_to_change(client, monkeypatch):
     on(monkeypatch, MON_W2)
     html = client.get("/").text
     assert "Trimmed to 80%" in html
-    assert 'href="#prev-checkin"' in html
+    assert 'href="/?prev=1#prev-checkin"' in html
 
 
 @pytest.mark.parametrize("data", [
@@ -77,3 +77,12 @@ def test_out_of_range_checkin_not_saved(client, monkeypatch, data):
     assert r.status_code == 303
     with db.conn() as c:
         assert c.execute("SELECT COUNT(*) FROM checkins").fetchone()[0] == 0
+
+
+def test_change_link_opens_last_weeks_form(client, monkeypatch):
+    on(monkeypatch, MON_W2)
+    _checkin(client, 1, pain=3)  # trims week 2, so the notice and its link show
+    page = client.get("/").text
+    assert 'href="/?prev=1#prev-checkin"' in page
+    assert '<details id="prev-checkin" class="prev-checkin">' in page
+    assert '<details id="prev-checkin" class="prev-checkin" open>' in client.get("/?prev=1").text

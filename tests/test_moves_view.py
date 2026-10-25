@@ -247,6 +247,20 @@ def test_past_session_has_no_hops_unlocked_later(client, monkeypatch):
     assert "hops" in [e["key"] for e in week2_a["exercises"]]
 
 
+def test_past_logged_session_shows_what_was_done(client, monkeypatch):
+    on(monkeypatch, SAT)
+    db.save_log({"date": "2026-10-20", "exercise": "sl_rdl_db", "weight_kg": 10.0, "reps": [8, 8], "target_reps": 8,
+                 "rating": "right"})
+    _, weeks = main.build_view()
+    b = next(s for s in weeks[0]["strength"] if s["key"] == "B")
+    assert [e["key"] for e in b["exercises"]] == ["sl_rdl_db"]
+    assert "copenhagen_short" in [e["key"] for e in b["not_logged"]]
+    a = next(s for s in weeks[0]["strength"] if s["key"] == "A")  # missed entirely: full prescription stays
+    assert len(a["exercises"]) > 1 and a["not_logged"] == []
+    page = client.get("/strength?week=1").text
+    assert "Also prescribed, not logged" in page
+
+
 # --- cleanup of the move-session review's minors ---
 
 def test_hero_on_a_two_run_day_is_the_longer_run(client, monkeypatch):

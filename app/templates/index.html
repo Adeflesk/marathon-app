@@ -251,7 +251,7 @@
 <section aria-labelledby="week-h">
   <h2 id="week-h">Week {{ week.week }}, {{ week.phase|lower if week.phase in ('Rebuild', 'Cutback', 'Taper', 'Race week') else ui.BLOCK_NAMES.get(week.block, week.phase|lower) }}</h2>
   <p class="mute">{{ week.target_km|km }} km planned, {{ week.actual_km|km }} km done. Week of {{ week.start.strftime('%-d %B') }}.</p>
-  {% if week.factor != 1.0 %}<p class="notice" style="margin-top:12px">Trimmed to {{ (week.factor * 100)|round|int }}% after last week's check-in. <a href="#prev-checkin">Change last week's check-in</a>.</p>{% endif %}
+  {% if week.factor != 1.0 %}<p class="notice" style="margin-top:12px">Trimmed to {{ (week.factor * 100)|round|int }}% after last week's check-in. <a href="/?prev=1#prev-checkin">Change last week's check-in</a>.</p>{% endif %}
   {% set longest = week.workouts|map(attribute='km')|max %}
   <ul class="days">
     {% for w in week.workouts %}
@@ -296,7 +296,7 @@
   <p class="mute">Your answers shape next week. Ankle pain of 3 or a rough week trims it by 10%, pain of 5 or more by 20%.</p>
   {{ checkin_form(week, "") }}
   {% if prev_week %}
-  <details id="prev-checkin" class="prev-checkin">
+  <details id="prev-checkin" class="prev-checkin"{{ ' open' if prev_open }}>
     <summary>Change last week's check-in (week {{ prev_week.week }}{% if prev_week.checkin %}: feel {{ prev_week.checkin.feel }}, ankle pain {{ prev_week.checkin.pain }}{% else %}: not done{% endif %})</summary>
     <p class="mute">This is what trims this week. Fix a mis-tap here and this week's runs and strength update.</p>
     {{ checkin_form(prev_week, "prev-") }}

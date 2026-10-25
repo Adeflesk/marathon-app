@@ -42,6 +42,7 @@
     <tr><td>{{ e.name }}<small>{{ e.cue }}</small></td><td>{{ e.rx }}</td></tr>
     {% endfor %}
   </table>
+  {% if sess.not_logged %}<p class="mute small">Also prescribed, not logged: {{ sess.not_logged|map(attribute="name")|join(", ") }}.</p>{% endif %}
 </section>
 {% endfor %}
 
