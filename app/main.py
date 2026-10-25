@@ -241,6 +241,12 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict |
             ex["log"] = st["by_key"].get((day, ex["key"]))
             ex["last"] = next((lg for lg in history if lg["date"] < day), None)
             ex["weights"] = weight_range(progression.available_weights(ex, eq))
+        # A past session you logged shows what you did; the rest (skipped, or added to the routine since) is
+        # listed apart. They can't be logged after the day, so they don't count against it.
+        logged = [ex for ex in sess["exercises"] if ex["log"]]
+        sess["not_logged"] = [ex for ex in sess["exercises"] if not ex["log"]] if logged and sess["date"] < t else []
+        if sess["not_logged"]:
+            sess["exercises"] = logged
 
     items = ankle.BALANCE_STAGES[max(0, min(st["balance_stage"], len(ankle.BALANCE_STAGES) - 1))]
     if w["phase"] == "Race week":
@@ -258,7 +264,7 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict |
 
 
 @app.get("/")
-def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = ""):
+def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = "", prev: str = ""):
     s, weeks = build_view()
     t = today()
     current = next((w for w in weeks if w["is_current"]), None)
@@ -270,6 +276,10 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
     next_run = next((wo for w in weeks for wo in w["workouts"]
                      if wo["km"] > 0 and not wo.get("skipped")
                      and (wo["date"] > t or (wo["date"] == t and wo["actual_km"] is None))), None)
+    if next_run:  # two runs on one day (after a Move anyway): show the main one
+        next_run = max((wo for w in weeks for wo in w["workouts"]
+                        if wo["date"] == next_run["date"] and wo["km"] > 0 and not wo.get("skipped")),
+                       key=lambda wo: wo["km"])
     done = [wo for w in weeks for wo in w["workouts"] if wo.get("review") and wo["date"] <= t]
     last_run = done[-1] if done else None
     strength_sessions = [x for w in weeks for x in w.get("strength", []) if x["date"] == t and not x.get("skipped")]
@@ -284,6 +294,9 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
     tests_this_week = {x["test"]: x for x in st["tests"]
                        if upcoming and upcoming["start"].isoformat() <= x["date"] <= week_end.isoformat()}
     move_warning = _move_warning(weeks, confirm, _day(on), _day(orig))
+    expires = smashrun.token_expiry() if os.environ.get("SMASHRUN_TOKEN") else None
+    left = (expires - t).days if expires else None
+    token_warning = {"expires": expires, "days": left} if left is not None and left <= smashrun.TOKEN_WARN_DAYS else None
     profile = {
         "planned": [w["target_km"] for w in weeks],
         "actual": [w["actual_km"] if (w["is_past"] or w["is_current"]) else None for w in weeks],
@@ -297,6 +310,7 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
             "s": s,
             "week": upcoming,
             "prev_week": prev_week,
+            "prev_open": prev == "1",
             "days_left": days_left,
             "weeks_left": days_left // 7,
             "profile": profile,
@@ -315,6 +329,7 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
             "hop_stage": st["hop_stage"],
             "injured_side": s["injured_side"],
             "move_warning": move_warning,
+            "token_warning": token_warning,
             "msg": msg,
             "paces": s["paces"],
             "goal": s["goal_time"],
@@ -570,6 +585,8 @@ def move(day: str = Form("", alias="date"), session: str = Form(""), confirm: st
     d = _day(day)
     if d is None or session not in SESSIONS:
         return _back("week", "Not moved: that isn't a session.")
+    if confirm not in ("", "skip", "move"):
+        return _back("week", "Not moved: that isn't a choice.")
     if d < today():
         return _back("week", "Not moved: that day has passed.")
     s, weeks = build_view()

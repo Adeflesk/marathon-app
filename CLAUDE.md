@@ -96,7 +96,8 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
 - `app/smashrun.py` — paged `GET /v1/my/activities/search`, upserts into `activities`, then fetches laps
   (`/my/activities/{id}`) and km splits (`/splits/km`) once per new run into `run_details` (max 40 runs
   per sync). Checked against the user's account. The token is a personal API Explorer token (client id
-  `client`, ~60 days, 250 requests/hour); errors surface as `SyncError` messages on the dashboard.
+  `client`, ~60 days, 250 requests/hour); errors surface as `SyncError` messages on the dashboard. `SMASHRUN_TOKEN_ISSUED` (YYYY-MM-DD) gives
+  `token_expiry()` (+60 days); the dashboard warns from 7 days before.
 - `app/review.py` — pure post-run review, recomputed per request like the plan: per-km pace and HR from
   splits, heart-rate drift (second half against first, first km excluded), easy runs quicker than MP + 20 s
   flagged, the long run's MP finish checked from its last splits, and structured sessions checked rep by

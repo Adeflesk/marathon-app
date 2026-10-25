@@ -21,7 +21,9 @@ syncs runs from Smashrun and compares them with the plan.
 
 Open https://api.smashrun.com/v1/explorer, type `client` in the box at the top, click Connect and copy
 the token. Put it in `.env` as `SMASHRUN_TOKEN=...` (on Fly: `fly secrets set SMASHRUN_TOKEN=...`).
-It lasts about 60 days; when sync says the token was rejected, get a new one the same way.
+It lasts about 60 days. Also set `SMASHRUN_TOKEN_ISSUED` to the day you generated it (`YYYY-MM-DD`), and
+This week warns you in the last 7 days before it runs out. When sync says the token was rejected, get a new
+one the same way and update both.
 
 ## After a run
 

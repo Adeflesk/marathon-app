@@ -152,6 +152,14 @@
 {% endblock %}
 {% block body %}
 {% if msg %}<p class="notice" role="status">{{ msg }}</p>{% endif %}
+{% if token_warning %}{% set tw = token_warning %}
+<p class="notice" role="status" style="margin-top:12px">
+  {% if tw.days >= 0 %}Your Smashrun token runs out on {{ tw.expires.strftime('%A %-d %B') }}{{ ' (today)' if tw.days == 0 else ' (in ' ~ tw.days ~ ' day' ~ ('s' if tw.days != 1) ~ ')' }}.
+  {%- else %}Your Smashrun token ran out on {{ tw.expires.strftime('%A %-d %B') }}, so syncing will fail.{% endif %}
+  Generate a new one in Smashrun's API Explorer (client id <code>client</code>), then run
+  <code>fly secrets set SMASHRUN_TOKEN=… SMASHRUN_TOKEN_ISSUED={{ today.isoformat() }}</code>.
+</p>
+{% endif %}
 {% if move_warning %}{% set mw = move_warning %}
 <section class="notice stack" id="move" role="alert" style="margin-top:12px">
   <p><strong>{{ mw.blocker_day.strftime('%A') }} already has your {{ mw.blocker }}.</strong>
@@ -243,7 +251,7 @@
 <section aria-labelledby="week-h">
   <h2 id="week-h">Week {{ week.week }}, {{ week.phase|lower if week.phase in ('Rebuild', 'Cutback', 'Taper', 'Race week') else ui.BLOCK_NAMES.get(week.block, week.phase|lower) }}</h2>
   <p class="mute">{{ week.target_km|km }} km planned, {{ week.actual_km|km }} km done. Week of {{ week.start.strftime('%-d %B') }}.</p>
-  {% if week.factor != 1.0 %}<p class="notice" style="margin-top:12px">Trimmed to {{ (week.factor * 100)|round|int }}% after last week's check-in. <a href="#prev-checkin">Change last week's check-in</a>.</p>{% endif %}
+  {% if week.factor != 1.0 %}<p class="notice" style="margin-top:12px">Trimmed to {{ (week.factor * 100)|round|int }}% after last week's check-in. <a href="/?prev=1#prev-checkin">Change last week's check-in</a>.</p>{% endif %}
   {% set longest = week.workouts|map(attribute='km')|max %}
   <ul class="days">
     {% for w in week.workouts %}
@@ -288,7 +296,7 @@
   <p class="mute">Your answers shape next week. Ankle pain of 3 or a rough week trims it by 10%, pain of 5 or more by 20%.</p>
   {{ checkin_form(week, "") }}
   {% if prev_week %}
-  <details id="prev-checkin" class="prev-checkin">
+  <details id="prev-checkin" class="prev-checkin"{{ ' open' if prev_open }}>
     <summary>Change last week's check-in (week {{ prev_week.week }}{% if prev_week.checkin %}: feel {{ prev_week.checkin.feel }}, ankle pain {{ prev_week.checkin.pain }}{% else %}: not done{% endif %})</summary>
     <p class="mute">This is what trims this week. Fix a mis-tap here and this week's runs and strength update.</p>
     {{ checkin_form(prev_week, "prev-") }}

@@ -32,7 +32,8 @@
 {% for sess in w.strength %}
 <section class="stack" aria-labelledby="s{{ loop.index }}">
   <h2 id="s{{ loop.index }}">{{ sess.name }}</h2>
-  <p class="mute">{{ sess.date.strftime('%A %-d %B') }}, about {{ sess.minutes }} minutes{% if sess.reduced %}, <span class="warn">reduced volume</span>{% endif %}.</p>
+  <p class="mute">{{ sess.date.strftime('%A %-d %B') }}, about {{ sess.minutes }} minutes{% if sess.reduced %}, <span class="warn">reduced volume</span>{% endif %}.
+    {%- if sess.skipped %} Skipped.{% elif sess.moved_from %} Moved from {{ sess.moved_from.strftime('%A') }}.{% endif %}</p>
   {% if sess.note %}<p class="notice">{{ sess.note }}</p>{% endif %}
   <p><strong>Warm-up:</strong> {{ sess.warmup }}</p>
   <table class="ex">
@@ -41,6 +42,7 @@
     <tr><td>{{ e.name }}<small>{{ e.cue }}</small></td><td>{{ e.rx }}</td></tr>
     {% endfor %}
   </table>
+  {% if sess.not_logged %}<p class="mute small">Also prescribed, not logged: {{ sess.not_logged|map(attribute="name")|join(", ") }}.</p>{% endif %}
 </section>
 {% endfor %}
 
