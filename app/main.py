@@ -284,6 +284,9 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
     tests_this_week = {x["test"]: x for x in st["tests"]
                        if upcoming and upcoming["start"].isoformat() <= x["date"] <= week_end.isoformat()}
     move_warning = _move_warning(weeks, confirm, _day(on), _day(orig))
+    expires = smashrun.token_expiry() if os.environ.get("SMASHRUN_TOKEN") else None
+    left = (expires - t).days if expires else None
+    token_warning = {"expires": expires, "days": left} if left is not None and left <= smashrun.TOKEN_WARN_DAYS else None
     profile = {
         "planned": [w["target_km"] for w in weeks],
         "actual": [w["actual_km"] if (w["is_past"] or w["is_current"]) else None for w in weeks],
@@ -315,6 +318,7 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
             "hop_stage": st["hop_stage"],
             "injured_side": s["injured_side"],
             "move_warning": move_warning,
+            "token_warning": token_warning,
             "msg": msg,
             "paces": s["paces"],
             "goal": s["goal_time"],

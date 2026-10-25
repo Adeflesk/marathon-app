@@ -152,6 +152,14 @@
 {% endblock %}
 {% block body %}
 {% if msg %}<p class="notice" role="status">{{ msg }}</p>{% endif %}
+{% if token_warning %}{% set tw = token_warning %}
+<p class="notice" role="status" style="margin-top:12px">
+  {% if tw.days >= 0 %}Your Smashrun token runs out on {{ tw.expires.strftime('%A %-d %B') }}{{ ' (today)' if tw.days == 0 else ' (in ' ~ tw.days ~ ' day' ~ ('s' if tw.days != 1) ~ ')' }}.
+  {%- else %}Your Smashrun token ran out on {{ tw.expires.strftime('%A %-d %B') }}, so syncing will fail.{% endif %}
+  Generate a new one in Smashrun's API Explorer (client id <code>client</code>), then run
+  <code>fly secrets set SMASHRUN_TOKEN=… SMASHRUN_TOKEN_ISSUED={{ today.isoformat() }}</code>.
+</p>
+{% endif %}
 {% if move_warning %}{% set mw = move_warning %}
 <section class="notice stack" id="move" role="alert" style="margin-top:12px">
   <p><strong>{{ mw.blocker_day.strftime('%A') }} already has your {{ mw.blocker }}.</strong>
