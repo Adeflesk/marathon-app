@@ -270,6 +270,10 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
     next_run = next((wo for w in weeks for wo in w["workouts"]
                      if wo["km"] > 0 and not wo.get("skipped")
                      and (wo["date"] > t or (wo["date"] == t and wo["actual_km"] is None))), None)
+    if next_run:  # two runs on one day (after a Move anyway): show the main one
+        next_run = max((wo for w in weeks for wo in w["workouts"]
+                        if wo["date"] == next_run["date"] and wo["km"] > 0 and not wo.get("skipped")),
+                       key=lambda wo: wo["km"])
     done = [wo for w in weeks for wo in w["workouts"] if wo.get("review") and wo["date"] <= t]
     last_run = done[-1] if done else None
     strength_sessions = [x for w in weeks for x in w.get("strength", []) if x["date"] == t and not x.get("skipped")]
@@ -574,6 +578,8 @@ def move(day: str = Form("", alias="date"), session: str = Form(""), confirm: st
     d = _day(day)
     if d is None or session not in SESSIONS:
         return _back("week", "Not moved: that isn't a session.")
+    if confirm not in ("", "skip", "move"):
+        return _back("week", "Not moved: that isn't a choice.")
     if d < today():
         return _back("week", "Not moved: that day has passed.")
     s, weeks = build_view()

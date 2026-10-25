@@ -245,3 +245,37 @@ def test_past_session_has_no_hops_unlocked_later(client, monkeypatch):
     week2_a = next(s for s in weeks[1]["strength"] if s["key"] == "A")
     assert "hops" not in [e["key"] for e in week1_a["exercises"]]  # Thursday: not unlocked yet
     assert "hops" in [e["key"] for e in week2_a["exercises"]]
+
+
+# --- cleanup of the move-session review's minors ---
+
+def test_hero_on_a_two_run_day_is_the_longer_run(client, monkeypatch):
+    on(monkeypatch, SUN)
+    db.save_move(SAT.isoformat(), "run", SUN.isoformat())
+    assert client.get("/").context["next_run"]["km"] == 10
+
+
+def test_move_rejects_unknown_confirm(client, monkeypatch):
+    on(monkeypatch, SAT)
+    r = post_move(client, SAT, "run", confirm="xyz")
+    assert "msg=" in r.headers["location"] and db.moves() == []
+
+
+def test_strength_page_marks_skipped_and_moved(client, monkeypatch):
+    on(monkeypatch, date(2026, 10, 19))
+    db.save_move("2026-10-20", "B", None)
+    db.save_move(THU.isoformat(), "A", FRI.isoformat())
+    page = client.get("/strength?week=1").text
+    assert "Skipped." in page and "Moved from Thursday." in page
+
+
+def test_stale_move_after_settings_change(client, monkeypatch, tmp_path):
+    from app import config
+    on(monkeypatch, date(2026, 10, 19))
+    db.save_move(SAT.isoformat(), "run", SUN.isoformat())  # Saturday's run, moved
+    custom = tmp_path / "settings.json"  # then the runs move to Tue/Thu/Sun: no Saturday run any more
+    custom.write_text(json.dumps({"run_days": {"tue": "easy", "thu": "quality", "sun": "long"}}))
+    monkeypatch.setattr(config, "SETTINGS_PATH", custom)
+    _, weeks = main.build_view()
+    assert not any(wo.get("moved_from") for wo in weeks[0]["workouts"])
+    assert client.get("/").status_code == 200
