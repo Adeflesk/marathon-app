@@ -263,6 +263,8 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
     t = today()
     current = next((w for w in weeks if w["is_current"]), None)
     upcoming = weeks[0] if t < weeks[0]["start"] else current
+    # last week, so a wrong check-in can still be changed once the week has rolled over
+    prev_week = weeks[upcoming["week"] - 2] if upcoming and upcoming["week"] > 1 else None
     days_left = (race_date(s) - t).days
     # the next run from today on, and any strength session today
     next_run = next((wo for w in weeks for wo in w["workouts"]
@@ -294,6 +296,7 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
         {
             "s": s,
             "week": upcoming,
+            "prev_week": prev_week,
             "days_left": days_left,
             "weeks_left": days_left // 7,
             "profile": profile,
@@ -430,12 +433,15 @@ def sync_now():
 
 @app.post("/checkin")
 def checkin(week: int = Form(...), feel: int = Form(...), pain: int = Form(...), note: str = Form("")):
+    n_weeks = len(generate(load_settings(), today()))
+    if not (1 <= week <= n_weeks and 1 <= feel <= 5 and 0 <= pain <= 10):
+        return RedirectResponse("/?msg=Check-in not saved: those values are out of range.", status_code=303)
     with db.conn() as c:
         c.execute(
             "INSERT OR REPLACE INTO checkins(week, feel, pain, note, created) VALUES (?,?,?,?,?)",
             (week, feel, pain, note, datetime.now().isoformat(timespec="seconds")),
         )
-    return RedirectResponse("/?msg=Check-in saved.", status_code=303)
+    return RedirectResponse(f"/?{urlencode({'msg': f'Week {week} check-in saved.'})}", status_code=303)
 
 
 def _num(text: str, kind=float):

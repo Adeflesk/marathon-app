@@ -1,6 +1,37 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui with context %}
 {% import "_strength.html" as sx %}
+{% macro checkin_form(wk, p) %}
+  <form method="post" action="/checkin" class="stack" style="margin-top:16px">
+    <input type="hidden" name="week" value="{{ wk.week }}">
+    {% set feel = wk.checkin.feel if wk.checkin else 3 %}
+    <div>
+      <fieldset class="scale" style="--n: 5; max-width: 16rem">
+        <legend>How did it feel?</legend>
+        {% for i in range(1, 6) %}
+        <input type="radio" name="feel" id="{{ p }}feel{{ i }}" value="{{ i }}" {{ 'checked' if i == feel }}><label for="{{ p }}feel{{ i }}">{{ i }}</label>
+        {% endfor %}
+      </fieldset>
+      <p class="ends" style="max-width: 16rem"><span>Awful</span><span>Great</span></p>
+    </div>
+    {% set pain = wk.checkin.pain if wk.checkin else 0 %}
+    <div>
+      <fieldset class="scale" style="--n: 11">
+        <legend>Ankle pain</legend>
+        {% for i in range(0, 11) %}
+        <input type="radio" name="pain" id="{{ p }}pain{{ i }}" value="{{ i }}" {{ 'checked' if i == pain }}><label for="{{ p }}pain{{ i }}">{{ i }}</label>
+        {% endfor %}
+      </fieldset>
+      <p class="ends"><span>None</span><span>Severe</span></p>
+    </div>
+    <div>
+      <label for="{{ p }}note">Anything else?</label>
+      <textarea id="{{ p }}note" name="note" rows="2">{{ wk.checkin.note if wk.checkin else '' }}</textarea>
+    </div>
+    <div><button class="button" type="submit">Save {{ "week " ~ wk.week ~ " " if p }}check-in</button></div>
+  </form>
+{% endmacro %}
+
 {% block head %}
 <style>
   .hero { padding-top: 20px; }
@@ -41,6 +72,8 @@
   .scale input:focus-visible + label { outline: 3px solid var(--steady); outline-offset: 2px; }
   .ends { display: flex; justify-content: space-between; font-size: .8125rem; color: var(--mute); margin-top: 4px; }
   .checkin .stack > * + * { margin-top: 20px; }
+  .prev-checkin { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .prev-checkin summary { cursor: pointer; font-weight: 600; padding: 10px 0; }
 
   .profile svg { display: block; width: 100%; height: auto; margin-top: 14px; overflow: visible; }
   .profile .planned { fill: color-mix(in srgb, var(--easy) 35%, transparent); stroke: var(--easy); stroke-width: 1.5; }
@@ -210,7 +243,7 @@
 <section aria-labelledby="week-h">
   <h2 id="week-h">Week {{ week.week }}, {{ week.phase|lower if week.phase in ('Rebuild', 'Cutback', 'Taper', 'Race week') else ui.BLOCK_NAMES.get(week.block, week.phase|lower) }}</h2>
   <p class="mute">{{ week.target_km|km }} km planned, {{ week.actual_km|km }} km done. Week of {{ week.start.strftime('%-d %B') }}.</p>
-  {% if week.factor != 1.0 %}<p class="notice" style="margin-top:12px">Trimmed to {{ (week.factor * 100)|round|int }}% after last week's check-in.</p>{% endif %}
+  {% if week.factor != 1.0 %}<p class="notice" style="margin-top:12px">Trimmed to {{ (week.factor * 100)|round|int }}% after last week's check-in. <a href="#prev-checkin">Change last week's check-in</a>.</p>{% endif %}
   {% set longest = week.workouts|map(attribute='km')|max %}
   <ul class="days">
     {% for w in week.workouts %}
@@ -253,34 +286,14 @@
 <section class="checkin" aria-labelledby="checkin-h">
   <h2 id="checkin-h">How was the week?</h2>
   <p class="mute">Your answers shape next week. Ankle pain of 3 or a rough week trims it by 10%, pain of 5 or more by 20%.</p>
-  <form method="post" action="/checkin" class="stack" style="margin-top:16px">
-    <input type="hidden" name="week" value="{{ week.week }}">
-    {% set feel = week.checkin.feel if week.checkin else 3 %}
-    <div>
-      <fieldset class="scale" style="--n: 5; max-width: 16rem">
-        <legend>How did it feel?</legend>
-        {% for i in range(1, 6) %}
-        <input type="radio" name="feel" id="feel{{ i }}" value="{{ i }}" {{ 'checked' if i == feel }}><label for="feel{{ i }}">{{ i }}</label>
-        {% endfor %}
-      </fieldset>
-      <p class="ends" style="max-width: 16rem"><span>Awful</span><span>Great</span></p>
-    </div>
-    {% set pain = week.checkin.pain if week.checkin else 0 %}
-    <div>
-      <fieldset class="scale" style="--n: 11">
-        <legend>Ankle pain</legend>
-        {% for i in range(0, 11) %}
-        <input type="radio" name="pain" id="pain{{ i }}" value="{{ i }}" {{ 'checked' if i == pain }}><label for="pain{{ i }}">{{ i }}</label>
-        {% endfor %}
-      </fieldset>
-      <p class="ends"><span>None</span><span>Severe</span></p>
-    </div>
-    <div>
-      <label for="note">Anything else?</label>
-      <textarea id="note" name="note" rows="2">{{ week.checkin.note if week.checkin else '' }}</textarea>
-    </div>
-    <div><button class="button" type="submit">Save check-in</button></div>
-  </form>
+  {{ checkin_form(week, "") }}
+  {% if prev_week %}
+  <details id="prev-checkin" class="prev-checkin">
+    <summary>Change last week's check-in (week {{ prev_week.week }}{% if prev_week.checkin %}: feel {{ prev_week.checkin.feel }}, ankle pain {{ prev_week.checkin.pain }}{% else %}: not done{% endif %})</summary>
+    <p class="mute">This is what trims this week. Fix a mis-tap here and this week's runs and strength update.</p>
+    {{ checkin_form(prev_week, "prev-") }}
+  </details>
+  {% endif %}
 </section>
 {% endif %}
 
