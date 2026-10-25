@@ -4,7 +4,7 @@
 
 {% macro kg(w) %}{{ '%g'|format(w) }} kg{% endmacro %}
 
-{% macro unit_of(ex) %}{{ {"carry": "m", "core": "s", "balance": "s"}.get(ex.role, "") }}{% endmacro %}
+{% macro unit_of(ex) %}{{ {"carry": "m", "core": "s", "balance": "s", "adductor": "s"}.get(ex.role, "") }}{% endmacro %}
 
 {% macro reps_text(reps, unit) -%}
 {%- set u = (" " ~ unit) if unit else "" -%}

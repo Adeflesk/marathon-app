@@ -239,6 +239,16 @@ def test_timed_and_carry_stay_in_range():
     assert run(ex("hops", "hops", 10, 15), [log(None, [15, 15, 15], "easy", exercise="hops")])["reps"] == 10
 
 
+def test_copenhagen_adds_seconds_in_range():
+    cop = ex("copenhagen_short", "adductor", 15, 25, sets=2)
+    k = {"exercise": "copenhagen_short"}
+    s = run(cop, [log(None, [15, 15], "easy", **k)])
+    assert (s["weight"], s["reps"], s["rung"]) == (None, 25, 0)
+    assert "s" in s["reason"].split()
+    s = run(cop, [log(None, [25, 25], "easy", **k)])
+    assert (s["reps"], s["rung"], s["level"]) == (25, 0, None)
+
+
 def test_dumbbell_lower_easy_twice_is_2_5_total():
     lunge = ex("reverse_lunge", "single_leg", 6, 8)
     k = {"exercise": "reverse_lunge"}

@@ -87,13 +87,29 @@ def test_thursday_order(weeks):
 def test_tuesday_composition(weeks):
     assert keys(session(weeks, 2, "B")) == [
         "balance_block", "sl_rdl_db", "ring_row", "push_up", "suitcase_carry", "pallof_press",
-        "calf_raise_bent", "band_eversion"]
+        "copenhagen_short", "calf_raise_bent", "band_eversion"]
     assert "ring_push_up" in keys(session(weeks, 8, "B"))
 
 
 def test_tuesday_core_rotates_by_block(weeks):
     assert keys(session(weeks, 8, "B"))[5] == "dead_bug"
     assert keys(session(weeks, 12, "B"))[5] == "side_plank"
+
+
+def test_copenhagen_every_tuesday_short_then_long(weeks):
+    short = ex(session(weeks, 2, "B"), "copenhagen_short")
+    assert short["role"] == "adductor"
+    assert short["rx"] == "2 × 15–25 s each side"
+    assert short["ankle"] is False
+    for n in (8, 12, 16):
+        assert "copenhagen_long" in keys(session(weeks, n, "B")), n
+        assert "copenhagen_short" not in keys(session(weeks, n, "B")), n
+    assert ex(session(weeks, 9, "B"), "copenhagen_long")["rx"] == "2 × 20–30 s each side"
+
+
+def test_no_copenhagen_in_taper2(weeks):
+    b = strength.sessions_for_week(weeks[19], eq(), ctx())[0]
+    assert not any(k.startswith("copenhagen") for k in keys(b))
 
 
 def test_no_hops_until_stage(weeks):

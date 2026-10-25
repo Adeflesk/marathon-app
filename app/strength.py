@@ -165,6 +165,15 @@ EXERCISES: dict[str, dict] = {
                         "band", {"bands"}, per_side=True, fallback="dead_bug"),
     "dead_bug": _ex("Dead bug", "Lower back flat on the floor, slow.", "timed"),
     "side_plank": _ex("Side plank", "Straight line from head to ankles. Per side.", "timed", per_side=True),
+    # Adductors: the one area the research routine left out. No ankle load (the top leg rests on the bench).
+    "copenhagen_short": _ex("Copenhagen plank, short lever",
+                            "Side plank with the top knee on a bench, chair or sofa and the bottom leg tucked or "
+                            "hovering. Squeeze the top knee down to lift the hips. Per side.",
+                            "timed", per_side=True, harder="copenhagen_long"),
+    "copenhagen_long": _ex("Copenhagen plank, long lever",
+                           "Side plank with the top foot or ankle on the bench and the bottom leg hovering. Hips "
+                           "high, body in one line. Drop back to the knee if the groin complains. Per side.",
+                           "timed", per_side=True),
     "calf_raise_bent": _ex("Single-leg calf raise, bent knee",
                            "Knee bent about 30 degrees, ball of the foot on the box edge or a step. Works the soleus. "
                            "Superset with the band eversion.",
@@ -183,9 +192,9 @@ def _rx(sets, lo, hi, rpe):
 # Tuesday's calves are a lighter second dose, so they get their own row (`tue_calf`).
 _TUE_BUILD = {"tue_lift": _rx(2, 8, 10, "6–7"), "tue_upper": _rx(2, 8, 10, "6–7"), "tue_calf": _rx(2, 10, 15, "6–7"),
               "carry": _rx(2, 40, 40, ""), "core": _rx(2, 30, 40, ""), "band": _rx(2, 15, 15, ""),
-              "balance": _rx(2, 30, 45, "")}
+              "balance": _rx(2, 30, 45, ""), "adductor": _rx(2, 20, 30, "")}
 _TUE_EASY = {**_TUE_BUILD, "tue_lift": _rx(2, 8, 10, "≤6"), "tue_upper": _rx(2, 8, 10, "≤6"),
-             "tue_calf": _rx(2, 10, 15, "≤6")}
+             "tue_calf": _rx(2, 10, 15, "≤6"), "adductor": _rx(2, 20, 20, "")}
 
 # The report's phase table. Carries count lo/hi in metres, core and balance in seconds, the rest in reps.
 # A role missing from a phase means that exercise is dropped that phase.
@@ -195,7 +204,7 @@ ROLE_RX: dict[str, dict[str, dict]] = {
         "calf": _rx(3, 12, 15, "6–7"), "soleus": _rx(3, 12, 15, "6–7"),
         "tue_lift": _rx(2, 8, 10, "6–7"), "tue_upper": _rx(2, 8, 10, "6–7"), "tue_calf": _rx(2, 15, 15, "6–7"),
         "carry": _rx(2, 30, 30, ""), "core": _rx(2, 30, 30, ""), "band": _rx(2, 15, 15, ""),
-        "balance": _rx(2, 30, 45, ""),
+        "balance": _rx(2, 30, 45, ""), "adductor": _rx(2, 15, 25, ""),
     },
     "Build": {
         "main": _rx(3, 6, 8, "7–8"), "single_leg": _rx(3, 6, 8, "7–8"), "hip_thrust": _rx(3, 6, 8, "7–8"),
@@ -288,7 +297,7 @@ def _effort(rpe: str) -> str:
 
 
 def _rx_text(e: dict) -> str:
-    unit = {"carry": " m", "core": " s", "balance": " s"}.get(e["role"], "")
+    unit = {"carry": " m", "core": " s", "balance": " s", "adductor": " s"}.get(e["role"], "")
     reps = f"{e['lo']}" if e["lo"] == e["hi"] else f"{e['lo']}–{e['hi']}"
     text = f"{e['sets']} × {reps}{unit}"
     if e["per_side"]:
@@ -309,8 +318,10 @@ def _plan_b(week: dict, ctx: dict) -> list[tuple[str, str]]:
     block = week["strength_block"]
     push = "push_up" if block == 0 else "ring_push_up"
     core = ("pallof_press", "dead_bug", "side_plank")[block % 3]
+    cop = "copenhagen_short" if block == 0 else "copenhagen_long"
     return [("balance_block", "balance"), ("sl_rdl_db", "tue_lift"), ("ring_row", "tue_upper"), (push, "tue_upper"),
-            ("suitcase_carry", "carry"), (core, "core"), ("calf_raise_bent", "tue_calf"), ("band_eversion", "band")]
+            ("suitcase_carry", "carry"), (core, "core"), (cop, "adductor"), ("calf_raise_bent", "tue_calf"),
+            ("band_eversion", "band")]
 
 
 def _hops(phase: str, stage: int) -> dict:

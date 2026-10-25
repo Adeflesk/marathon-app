@@ -64,7 +64,9 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
 - `app/strength.py` — routines and prescriptions based on sports science research.
   - Prescriptions come from `ROLE_RX` per phase (Rebuild, Build, Cutback, Peak, Taper).
   - Sessions are Thursday A (hops when ready, box squat, RDL, single-leg lift by block, calf raises, seated soleus, hip thrust)
-    and Tuesday B (balance, single-leg RDL, ring row + push-up, suitcase carry + core, bent calf + band eversion).
+    and Tuesday B (balance, single-leg RDL, ring row + push-up, suitcase carry + core, Copenhagen plank, bent calf
+    + band eversion). The Copenhagen plank has its own `adductor` role (timed, seconds): `copenhagen_short` in
+    `strength_block` 0, `copenhagen_long` after, none in Taper 2. Added after the research routine, not from it.
   - Equipment fallbacks dynamically map to dumbbells/bodyweight if rings or racks are missing (`strength.tokens(eq)`).
   - Trims apply when cutback, factor 0.9/0.8, Wednesday quality run verdict is "bad", or ankle flag is active (floor of 1 set).
 - `app/progression.py` — pure progression and suggestion engine from logged history.

@@ -17,7 +17,7 @@ WARMUP_START = {"barbell": [20, 30, 40], "dumbbell": [5, 7.5, 10], "kettlebell":
 # Loads that progress through reps and the ladder only. Hops follow the hop stage instead (see strength.py);
 # carries and timed holds stay inside their prescribed range.
 NO_LADDER = {"hops", "timed", "carry"}
-UNITS = {"carry": "m", "core": "s", "balance": "s"}  # by role, as strength._rx_text counts them
+UNITS = {"carry": "m", "core": "s", "balance": "s", "adductor": "s"}  # by role, as strength._rx_text counts them
 LADDER_TEXT = {2: "3–4 s lowering", 3: "2–3 s pause"}
 
 KB_GATE_REPS = 15  # a kettlebell jump needs an easy rating at this many reps or more

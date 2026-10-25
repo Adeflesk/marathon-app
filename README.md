@@ -75,7 +75,10 @@ python -m app.pace_engine 10 52:30
     the block's single-leg lift (step-ups in block 0, reverse lunges in block 1, Bulgarian split squats from block 2),
     straight calf raise, seated soleus raise, and barbell hip thrust.
   - **Tuesday B** (light full body and ankle, ~35 min): ankle balance block, dumbbell single-leg RDL, ring row +
-    push-up, suitcase carry + core (Pallof press, dead bug, or side plank), bent calf raise + band eversion.
+    push-up, suitcase carry + core (Pallof press, dead bug, or side plank), Copenhagen plank, bent calf raise +
+    band eversion. The Copenhagen plank works the inner thigh (groin), which the rest of the routine misses. It
+    starts with the knee on the bench (short lever) and moves to the foot on the bench from week 7; holds grow
+    from 15 s towards 30 s per side as you rate them easy. It's dropped in the last taper week.
 - **Logging card on This week**: on strength days, a checklist card appears. Each exercise gives a suggested
   weight and reps. The very first session shows a warm-up ladder to establish your working weight. Enter your
   weights and reps, then tap **Easy**, **Right**, or **Hard** to save. The app steps the load up or down next
