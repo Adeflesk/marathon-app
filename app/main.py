@@ -241,6 +241,12 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict |
             ex["log"] = st["by_key"].get((day, ex["key"]))
             ex["last"] = next((lg for lg in history if lg["date"] < day), None)
             ex["weights"] = weight_range(progression.available_weights(ex, eq))
+        # A past session you logged shows what you did; the rest (skipped, or added to the routine since) is
+        # listed apart. They can't be logged after the day, so they don't count against it.
+        logged = [ex for ex in sess["exercises"] if ex["log"]]
+        sess["not_logged"] = [ex for ex in sess["exercises"] if not ex["log"]] if logged and sess["date"] < t else []
+        if sess["not_logged"]:
+            sess["exercises"] = logged
 
     items = ankle.BALANCE_STAGES[max(0, min(st["balance_stage"], len(ankle.BALANCE_STAGES) - 1))]
     if w["phase"] == "Race week":
@@ -258,7 +264,7 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict |
 
 
 @app.get("/")
-def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = ""):
+def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = "", prev: str = ""):
     s, weeks = build_view()
     t = today()
     current = next((w for w in weeks if w["is_current"]), None)
@@ -297,6 +303,7 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
             "s": s,
             "week": upcoming,
             "prev_week": prev_week,
+            "prev_open": prev == "1",
             "days_left": days_left,
             "weeks_left": days_left // 7,
             "profile": profile,
