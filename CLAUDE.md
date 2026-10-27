@@ -92,7 +92,8 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
 - `app/garmin.py` — builds FIT workout files with `fit-tool`; pace targets are speed ranges (m/s) around
   `settings.paces`. Repeat blocks become a `REPEAT_UNTIL_STEPS_CMPLT` step after their steps, pointing back
   to the block's first step index, mirroring Garmin Connect's own files (samples in `samples/garmin/`,
-  untracked). Single-step and tempo files are confirmed on the user's watch.
+  untracked). Single-step and tempo files are confirmed on the user's watch. Easy and long runs open with a `WARMUP_KM` (1 km) open-target warm-up
+  step inside their planned km; race day doesn't.
 - `app/smashrun.py` — paged `GET /v1/my/activities/search`, upserts into `activities`, then fetches laps
   (`/my/activities/{id}`) and km splits (`/splits/km`) once per new run into `run_details` (max 40 runs
   per sync). Checked against the user's account. The token is a personal API Explorer token (client id

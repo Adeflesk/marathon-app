@@ -21,6 +21,7 @@ from .sessions import pace_s
 # (slower seconds, faster seconds) around the target pace
 EASY_BAND = (30, -30)
 HARD_BAND = (10, -10)
+WARMUP_KM = 1  # easy and long runs open with an untargeted km so the watch doesn't nag a cold start
 
 
 INTENSITY = {"warmup": Intensity.WARMUP, "active": Intensity.ACTIVE, "recovery": Intensity.RECOVERY,
@@ -88,17 +89,19 @@ def steps_for(w: dict, paces: dict) -> list:
         return _structured(w["steps"], paces)
     kind = w["type"]
     label = lambda p: fmt_pace(p)
+    if kind == "race":
+        return [_step(f"Race {label(mp)}", Intensity.ACTIVE, mp, (15, -10), km=w["km"])]
+    wu = WARMUP_KM if w["km"] > WARMUP_KM else 0
+    first = [_step("Warm up", Intensity.WARMUP, None, None, km=wu)] if wu else []
     if kind == "long":
         mp_km = w.get("mp_km", 0)
         if mp_km:
-            return [
-                _step(f"Easy {label(longp)}", Intensity.ACTIVE, longp, EASY_BAND, km=w["km"] - mp_km),
+            return first + [
+                _step(f"Easy {label(longp)}", Intensity.ACTIVE, longp, EASY_BAND, km=w["km"] - mp_km - wu),
                 _step(f"MP {label(mp)}", Intensity.ACTIVE, mp, HARD_BAND, km=mp_km),
             ]
-        return [_step(f"Long {label(longp)}", Intensity.ACTIVE, longp, EASY_BAND, km=w["km"])]
-    if kind == "race":
-        return [_step(f"Race {label(mp)}", Intensity.ACTIVE, mp, (15, -10), km=w["km"])]
-    return [_step(f"Easy {label(easy)}", Intensity.ACTIVE, easy, EASY_BAND, km=w["km"])]
+        return first + [_step(f"Long {label(longp)}", Intensity.ACTIVE, longp, EASY_BAND, km=w["km"] - wu)]
+    return first + [_step(f"Easy {label(easy)}", Intensity.ACTIVE, easy, EASY_BAND, km=w["km"] - wu)]
 
 
 def workout_name(w: dict) -> str:

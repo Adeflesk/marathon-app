@@ -46,3 +46,25 @@ def test_build_fit_bytes(settings):
             if w["km"] > 0:
                 data = garmin.build_fit(w, settings["paces"])
                 assert data[8:12] == b".FIT", (week["week"], w["type"])
+
+
+def _km(msgs):
+    return sum(m.duration_distance for m in msgs) / 1000
+
+
+def test_easy_and_long_start_with_an_open_warmup_km(settings):
+    p = settings["paces"]
+    for w in ({"type": "easy", "km": 4.5}, {"type": "long", "km": 10},
+              {"type": "long", "km": 24, "mp_km": 4}):
+        msgs = garmin.steps_for(w, p)
+        assert msgs[0].intensity == Intensity.WARMUP.value
+        assert msgs[0].target_type == WorkoutStepTarget.OPEN.value
+        assert msgs[0].duration_distance == 1000
+        assert msgs[1].target_type == WorkoutStepTarget.SPEED.value
+        assert _km(msgs) == w["km"]
+    assert garmin.steps_for({"type": "long", "km": 24, "mp_km": 4}, p)[-1].workout_step_name.startswith("MP")
+
+
+def test_race_has_no_warmup_step(settings):
+    msgs = garmin.steps_for({"type": "race", "km": 42.2}, settings["paces"])
+    assert len(msgs) == 1 and msgs[0].intensity == Intensity.ACTIVE.value
