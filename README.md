@@ -116,8 +116,10 @@ already done, or one whose next day is race day, can't be moved.
 
 Each run in the week table has a "Garmin .fit" link, and "Garmin files for the week" gives a zip of the
 whole week. Wednesday sessions have a warm-up, the reps as a repeat block (so the watch counts them down
-and shows "rep 3 of 6"), and a cool-down. Recoveries have no pace target. Easy and long runs are a single
-pace-range step; a long run with a marathon-pace finish is two.
+and shows "rep 3 of 6"), and a cool-down. Recoveries have no pace target. Easy and long runs open with a
+1 km warm-up with no pace target (start as slowly as you like; the watch won't nag), then the rest of the run
+in its pace range. A long run with a marathon-pace finish adds the MP step at the end. Race day has no warm-up
+step. Before any run, a couple of minutes of calf raises and ankle circles at the door is good for the ankle.
 
 1. Connect the watch to the computer by USB and unzip the `.fit` files.
 2. Copy them into the watch's `GARMIN/NewFiles` folder (if they don't show up, try `GARMIN/Workouts`).
