@@ -30,7 +30,9 @@ one the same way and update both.
 Sync from Smashrun once the run is there. Each new run's km splits and laps come with it, and This week
 shows a review of your last run: easy runs quicker than easy get flagged, long runs show whether the
 marathon-pace finish was on pace, and sessions run from the watch workout are checked rep by rep.
-Heart-rate drift (second half against first) under 5% means the effort stayed steady.
+Strides are listed one by one but not judged, since they go by feel; the review checks that the running
+around them stayed easy. Heart-rate drift (second half against first) under 5% means the effort stayed
+steady. Strides days show no drift figure, because the strides lift your heart rate on purpose.
 
 ## Days
 

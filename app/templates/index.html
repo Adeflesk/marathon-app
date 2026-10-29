@@ -223,10 +223,10 @@
   <div class="review v-{{ r.verdict }} stack">
     <p class="headline">{{ r.headline }}</p>
     {% if r.reps %}
-    <ol class="reps" aria-label="Reps">
+    <ol class="reps" aria-label="{{ 'Strides' if last_run.type == 'strides' else 'Reps' }}">
       {% for x in r.reps %}
-      <li><span>Rep {{ x.n }}</span><span>{{ x.actual|pace }}/km <span class="mute small">target {{ x.target|pace }}</span></span>
-        <span class="tick-{{ x.verdict }}">{{ {'on': 'On pace', 'fast': 'Quick', 'slow': 'Slow'}[x.verdict] }}</span></li>
+      <li><span>{{ x.label or 'Rep' }} {{ x.n }}</span><span>{{ x.actual|pace }}/km <span class="mute small">target {{ x.target|pace }}</span></span>
+        {% if x.label != 'Stride' %}<span class="tick-{{ x.verdict }}">{{ {'on': 'On pace', 'fast': 'Quick', 'slow': 'Slow'}[x.verdict] }}</span>{% endif %}</li>
       {% endfor %}
     </ol>
     {% endif %}

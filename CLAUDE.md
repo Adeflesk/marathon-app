@@ -102,7 +102,8 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
 - `app/review.py` — pure post-run review, recomputed per request like the plan: per-km pace and HR from
   splits, heart-rate drift (second half against first, first km excluded), easy runs quicker than MP + 20 s
   flagged, the long run's MP finish checked from its last splits, and structured sessions checked rep by
-  rep from Garmin `work` laps (within 10 s/km is on pace). `build_view` attaches `review` to each planned
+  rep from Garmin `work` laps (within 10 s/km is on pace). Strides days list each stride without judging it, skip drift, and
+  warn (never "bad") only when the easy running around them is too quick. `build_view` attaches `review` to each planned
   workout whose day has a synced run with details (the day's longest run).
 - `app/db.py` — tables: `activities` (synced runs), `run_details` (JSON km splits and laps per run),
   `checkins` (keyed by week number), `strength_logs` (logged sets, weight, reps, rating, ankle pain),
