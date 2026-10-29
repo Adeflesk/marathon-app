@@ -49,19 +49,53 @@ def _drift_words(d: float | None) -> str:
     return "some heart-rate drift" if d < 10 else "heart rate drifted a lot"
 
 
-def _reps(workout: dict, laps: list[dict], paces: dict) -> list[dict]:
-    targets = [pace_s(st["pace"], paces) for st in flatten(workout["steps"]) if st["intensity"] == "active"]
+def _laps(laps: list[dict]) -> list[dict]:
+    """Smashrun laps (cumulative) as [{type, km, seconds}] per lap."""
     out, dist, dur = [], 0.0, 0.0
-    work = []
     for lap in laps:
         d, t = lap["endDistance"] - dist, lap["endDuration"] - dur
-        if lap.get("lapType") == "work" and d > 0:
-            work.append(t / d)
+        if d > 0:
+            out.append({"type": lap.get("lapType"), "km": d, "seconds": t})
         dist, dur = lap["endDistance"], lap["endDuration"]
+    return out
+
+
+def _reps(workout: dict, laps: list[dict], paces: dict, label: str = "Rep") -> list[dict]:
+    targets = [pace_s(st["pace"], paces) for st in flatten(workout["steps"]) if st["intensity"] == "active"]
+    work = [lap["seconds"] / lap["km"] for lap in _laps(laps) if lap["type"] == "work"]
+    out = []
     for n, (actual, target) in enumerate(zip(work, targets), 1):
         diff = actual - target
         verdict = "on" if abs(diff) <= ON_PACE_S else ("fast" if diff < 0 else "slow")
-        out.append({"n": n, "target": target, "actual": actual, "verdict": verdict})
+        out.append({"n": n, "label": label, "target": target, "actual": actual, "verdict": verdict})
+    return out
+
+
+def _strides(workout: dict, run: dict, detail: dict, paces: dict, out: dict) -> dict:
+    """Strides go by feel, so they're listed, not judged; the verdict is whether the running around
+    them stayed easy. Never "bad", and no drift: the strides lift the heart rate on purpose."""
+    out["drift"] = None
+    laps = _laps(detail.get("laps") or [])
+    reps = _reps(workout, detail.get("laps") or [], paces, "Stride")
+    out["reps"] = reps
+    if not reps:
+        avg = run["seconds"] / run["km"] if run["km"] else None
+        out["headline"] = f"Strides done: {run['km']:.1f} km at {fmt_pace(avg)}/km." if avg else "Strides done."
+        out["note"] = "No stride laps came through. Start the session from the watch workout to see each stride."
+        return out
+    # The easy running: every lap but the strides and the jog straight after each one
+    easy = [lap for i, lap in enumerate(laps) if lap["type"] != "work" and (i == 0 or laps[i - 1]["type"] != "work")]
+    each = [r["actual"] for r in reps]
+    out["headline"] = f"{len(reps)} strides, {fmt_pace(min(each))}–{fmt_pace(max(each))}/km."
+    out["verdict"] = "good"
+    km = sum(lap["km"] for lap in easy)
+    if km:
+        pace = sum(lap["seconds"] for lap in easy) / km
+        if pace < paces["marathon"] + 20:
+            out["headline"] += f" Easy running at {fmt_pace(pace)}/km is quicker than easy. Keep it easy."
+            out["verdict"] = "warn"
+        else:
+            out["headline"] += f" Easy running at {fmt_pace(pace)}/km."
     return out
 
 
@@ -72,7 +106,9 @@ def review(workout: dict, run: dict, detail: dict, paces: dict) -> dict:
     avg = run["seconds"] / run["km"] if run["km"] else None
     out = {"splits": sp, "drift": d, "reps": [], "note": "", "verdict": "neutral", "headline": ""}
 
-    if "steps" in workout and workout["type"] != "strides":
+    if workout["type"] == "strides":
+        return _strides(workout, run, detail, paces, out)
+    if "steps" in workout:
         reps = _reps(workout, detail.get("laps") or [], paces)
         out["reps"] = reps
         if not reps:
