@@ -101,6 +101,9 @@ def actual_by_date() -> dict[str, dict]:
     return out
 
 
+GOAL_SETTINGS = "settings"  # a stored goal meaning "back to whatever settings.json says"
+
+
 def apply_goal(s: dict, t: date) -> None:
     """The goal the user last picked (on or before `t`) overrides the settings' goal and its pace.
 
@@ -110,9 +113,10 @@ def apply_goal(s: dict, t: date) -> None:
     s["settings_goal"] = current = s["goal_time"]
     s["goal_changes"] = []
     for g in db.goals():
-        if g["date"] <= t.isoformat() and g["goal_time"] != current:
-            s["goal_changes"].append({"date": g["date"], "from": current, "to": g["goal_time"]})
-            current = g["goal_time"]
+        goal = s["settings_goal"] if g["goal_time"] == GOAL_SETTINGS else g["goal_time"]
+        if g["date"] <= t.isoformat() and goal != current:
+            s["goal_changes"].append({"date": g["date"], "from": current, "to": goal})
+            current = goal
     if current != s["settings_goal"]:
         s["goal_time"] = current
         s["paces"]["marathon"] = round(parse_time(current) / 42.195)
@@ -660,7 +664,8 @@ def goal_change(goal: str = Form("")):
     if not 2.5 * 3600 <= seconds <= 6 * 3600:
         return RedirectResponse(f"/progress?{urlencode({'msg': 'Not changed: that is not a marathon time.'})}#verdict",
                                 status_code=303)
-    db.save_goal(today().isoformat(), fmt_time(seconds))
+    back = seconds == parse_time(load_settings()["goal_time"])
+    db.save_goal(today().isoformat(), GOAL_SETTINGS if back else fmt_time(seconds))
     msg = f"Goal changed to {fmt_time(seconds)[:-3]}. The plan now follows it."
     return RedirectResponse(f"/progress?{urlencode({'msg': msg})}#verdict", status_code=303)
 

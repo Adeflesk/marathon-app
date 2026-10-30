@@ -56,3 +56,14 @@ def test_goal_change_with_a_result(client):
     s, _ = main.build_view()
     assert s["result"]["verdict"] == "within reach" and s["result"]["mp_source"] == "threshold"
     assert s["paces"]["marathon"] == s["paces"]["tempo"] + 10
+
+
+def test_back_follows_a_later_settings_goal(client, monkeypatch, tmp_path):
+    _goal(client, "4:09:00")
+    _goal(client, "3:59:00")  # back to the settings goal
+    from app import config
+    f = tmp_path / "settings.json"
+    f.write_text('{"goal_time": "4:00:00"}')
+    monkeypatch.setattr(config, "SETTINGS_PATH", f)
+    s, _ = main.build_view()
+    assert s["goal_time"] == "4:00:00" and s["paces"]["marathon"] == 341  # the settings' pace, untouched

@@ -90,8 +90,8 @@ def goal_options(predicted: float | None, goal_s: float, settings_goal_s: float,
         picks.append((settings_goal_s, "back", "Your original goal."))
     out, taken = [], [goal_s]
     for seconds, kind, why in picks:
-        if kind != "back" and any(abs(seconds - x) < NEAR for x in taken):
-            continue
+        if kind != "back" and (seconds < goal_s or any(abs(seconds - x) < NEAR for x in taken)):
+            continue  # never harder than the goal you have, nor a near-copy of another option
         taken.append(seconds)
         out.append({"seconds": seconds, "time": _hms(seconds), "mp": round(seconds / 42.195), "kind": kind,
                     "why": why})
@@ -106,7 +106,9 @@ PAIN_WARN = 3
 
 
 def why_rows(weeks: list[dict], t: date, ref_pace: float) -> list[dict]:
-    done = [w for w in weeks if w["is_past"]][-WINDOW:]
+    window = [w for w in weeks if w["is_past"]][-WINDOW:]
+    done = [w for w in window if w["synced"]]  # a week no sync has covered may be missing runs
+    unsynced = [w["week"] for w in window if not w["synced"]]
     if done:
         share = sum(w["actual_km"] for w in done) / (sum(w["target_km"] for w in done) or 1)
         sessions = [x for w in done for x in w.get("strength", []) if not x.get("skipped")]
@@ -116,7 +118,11 @@ def why_rows(weeks: list[dict], t: date, ref_pace: float) -> list[dict]:
                 f"{sum(1 for x in sessions if x['done'])} of {len(sessions)} strength sessions")
         if held:
             text += ", week " + ", ".join(map(str, held)) + " held"
+        if unsynced:
+            text += "; week " + ", ".join(map(str, unsynced)) + " not synced yet"
         plan = {"key": "plan", "ok": share >= PLAN_OK, "text": text}
+    elif unsynced:
+        plan = {"key": "plan", "ok": True, "text": "not synced since last week ended: sync to see it."}
     else:
         plan = {"key": "plan", "ok": True, "text": "Nothing to judge yet: week 1 is still under way."}
 

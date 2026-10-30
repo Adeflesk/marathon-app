@@ -51,7 +51,7 @@
   {% else %}
   {% set r = s.result %}
   {% set dist = {5.0: '5 km', 10.0: '10 km', 21.0975: 'half marathon'}.get(r.km, r.km|km ~ ' km') %}
-  <p>Your {{ dist }} on {{ r.date|longdate }} {% set mins = (r.predicted / 60)|round|int %}predicts <strong>{{ mins // 60 }}:{{ '%02d'|format(mins % 60) }}</strong> for the marathon.</p>
+  <p>Your {{ dist }} on {{ r.date|longdate }} {% set mins = (r.predicted / 60)|round(0, 'ceil')|int %}predicts <strong>{{ mins // 60 }}:{{ '%02d'|format(mins % 60) }}</strong> for the marathon.</p>
   {% endif %}
   {% if s.goal_changes %}{% set last = s.goal_changes[-1] %}
   <p class="mute small">Goal changed from {{ short(last.from) }} to {{ short(last.to) }} on {{ last.date|longdate }}.</p>

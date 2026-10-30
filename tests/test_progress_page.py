@@ -37,6 +37,7 @@ def test_progress_page_with_a_stretch(client, monkeypatch):
     db.save_result("2026-11-01", 5.0, 1590)  # 26:30
     page = client.get("/progress").text
     assert "3:59 is a stretch" in page
+    assert "predicts <strong>4:20</strong>" in page  # rounded up, like the prediction card
     assert 'name="goal" value="4:09:00"' in page and "Train for 4:09" in page
 
 

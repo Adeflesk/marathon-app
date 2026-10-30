@@ -15,9 +15,10 @@ def run(n, kind="easy", splits=None, km=5.0, steps=False, mp_km=0, drift=None, r
     return wo
 
 
-def wk(n, workouts, target=25.0, actual=25.0, past=True, current=False, guard=None):
+def wk(n, workouts, target=25.0, actual=25.0, past=True, current=False, guard=None, synced=None):
     return {"week": n, "start": START + timedelta(weeks=n - 1), "workouts": workouts, "target_km": target,
-            "actual_km": actual, "is_past": past, "is_current": current, "guard": guard}
+            "actual_km": actual, "is_past": past, "is_current": current, "guard": guard,
+            "synced": past if synced is None else synced}
 
 
 EASY = [(1, 400, 130), (1, 400, 150), (1, 410, 152), (1, 415, 148), (1, 380, 160), (1, 430, 170)]
@@ -150,3 +151,15 @@ def test_goal_options_without_a_prediction_only_offer_the_way_back():
 def test_plan_row_after_one_week_reads_right():
     r = rows([full_week(1), full_week(2, past=False, current=True)])
     assert r["plan"]["text"].startswith("100% of planned km last week,")
+
+
+def test_no_stretch_harder_than_the_goal():
+    opts = progress.goal_options(4.05 * 3600, 14340, 14340, 14)  # predicts 4:03, goal 3:59: within reach
+    assert all(o["seconds"] >= 14340 for o in opts if o["kind"] != "back")
+
+
+def test_plan_row_ignores_weeks_no_sync_has_covered():
+    weeks = [full_week(i) for i in range(1, 6)] + [full_week(6, past=False, current=True)]
+    weeks[4]["actual_km"], weeks[4]["synced"] = 8.0, False  # Sunday's long run not synced yet
+    r = rows(weeks)["plan"]
+    assert r["ok"] and "100%" in r["text"] and "week 5 not synced yet" in r["text"]
