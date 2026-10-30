@@ -47,6 +47,7 @@
         <span class="tag">
           {%- if w.is_current %}This week. {% endif -%}
           {%- if w.phase == 'Cutback' %}Cutback week. {% endif -%}
+          {%- if w.guard %}{{ 'Held' if w.guard.why == 'hold' else 'Capped' }} from {{ w.guard.planned|km }} km after missed running. {% endif -%}
           {%- set lr = w.workouts|selectattr('type', 'in', ['long', 'race'])|list -%}
           {%- if lr %}{% if lr[0].type == 'race' %}Race day{% else %}Long run {{ lr[0].km|km }} km{% if lr[0].mp_km %}, last {{ lr[0].mp_km|km }} at marathon pace{% endif %}{% endif %}{% endif -%}
         </span>

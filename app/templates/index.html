@@ -251,7 +251,10 @@
 <section aria-labelledby="week-h">
   <h2 id="week-h">Week {{ week.week }}, {{ week.phase|lower if week.phase in ('Rebuild', 'Cutback', 'Taper', 'Race week') else ui.BLOCK_NAMES.get(week.block, week.phase|lower) }}</h2>
   <p class="mute">{{ week.target_km|km }} km planned, {{ week.actual_km|km }} km done. Week of {{ week.start.strftime('%-d %B') }}.</p>
-  {% if week.factor != 1.0 %}<p class="notice" style="margin-top:12px">Trimmed to {{ (week.factor * 100)|round|int }}% after last week's check-in. <a href="/?prev=1#prev-checkin">Change last week's check-in</a>.</p>{% endif %}
+  {% if week.guard %}{% set g = week.guard %}<p class="notice" style="margin-top:12px">
+    {% if g.why == 'hold' %}Held to {{ week.target_km|km }} km (planned {{ g.planned|km }}) after last week's {{ g.last[0]|km }} of {{ g.last[1]|km }} km. It climbs back towards the plan over the next weeks.
+    {% else %}Capped at {{ week.target_km|km }} km (planned {{ g.planned|km }}), about 15% above your best recent week ({{ g.best|km }} km), while you build back up.{% endif %}</p>
+  {% elif week.factor != 1.0 %}<p class="notice" style="margin-top:12px">Trimmed to {{ (week.factor * 100)|round|int }}% after last week's check-in. <a href="/?prev=1#prev-checkin">Change last week's check-in</a>.</p>{% endif %}
   {% set longest = week.workouts|map(attribute='km')|max %}
   <ul class="days">
     {% for w in week.workouts %}
@@ -329,14 +332,53 @@
   </p>
 </section>
 
-<section aria-labelledby="paces-h">
+<section id="paces" aria-labelledby="paces-h">
   <h2 id="paces-h">Your paces</h2>
+  {% set r = s.result %}
+  {% if r %}
+  {% set dist = {5.0: '5 km', 10.0: '10 km', 21.0975: 'half marathon'}.get(r.km, r.km|km ~ ' km') %}
+  <p class="mute">From your {{ dist }} in {{ r.seconds|clock }} on {{ r.date|longdate }}.</p>
+  <p class="notice v-{{ 'good' if r.verdict != 'ambitious' else 'warn' }}" style="margin-top:12px">
+    {% if r.verdict == 'on track' %}On track: your {{ dist }} predicts {{ r.predicted|hms }} for the marathon, inside the {{ goal }} goal.
+    {% elif r.verdict == 'within reach' %}Within reach: your {{ dist }} predicts {{ r.predicted|hms }} against the {{ goal }} goal. A gap this size can close over the build.
+    {% else %}Ambitious: your {{ dist }} predicts {{ r.predicted|hms }} against the {{ goal }} goal.{% endif %}
+    {% if r.mp_source == 'threshold' %}For now marathon-pace work uses {{ paces.marathon|pace }}/km: goal pace is too close to your threshold pace ({{ paces.tempo|pace }}/km) to be marathon effort yet. It moves to goal pace as faster results come in.
+    {% elif r.mp_source == 'result' %}Marathon-pace work uses {{ paces.marathon|pace }}/km, your predicted pace, until a faster result comes in.{% endif %}
+  </p>
+  {% endif %}
   <table class="paces" style="margin-top:12px">
     {% set PACE_NAMES = {"easy": "Easy", "long": "Long run", "marathon": "Marathon", "subthreshold": "Sub-threshold", "tempo": "Threshold", "interval": "Interval"} %}
     {% for k, v in paces.items() %}
     <tr><td>{{ PACE_NAMES.get(k, k|title) }}</td><td class="num">{{ v|pace }}/km</td><td class="num mute">{{ v|pace_mi }}/mi</td></tr>
     {% endfor %}
   </table>
-  <p class="mute small" style="margin-top:10px">Change these in <code>settings.json</code> after a time trial. Marathon pace is the sub-4 target, not your current fitness.</p>
+  {% if not r %}<p class="mute small" style="margin-top:10px">These come from your settings. Log a race or time trial below and they follow your fitness. Marathon pace is the {{ goal }} goal pace while the goal is within reach.</p>{% endif %}
+  <details class="prev-checkin"{{ ' open' if not r }}>
+    <summary>Log a race or time trial</summary>
+    <p class="mute">A parkrun, a solo 5 km flat out, or a race. The latest one sets your paces, the watch files and the plan.</p>
+    <form method="post" action="/result" class="stack" style="margin-top:12px">
+      <div>
+        <label for="result-date">Day</label>
+        <input type="date" id="result-date" name="date" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" required>
+      </div>
+      <div>
+        <label for="result-km">Distance</label>
+        <select id="result-km" name="km">
+          <option value="5">5 km</option><option value="10">10 km</option><option value="21.1">Half marathon</option>
+        </select>
+      </div>
+      <div>
+        <label for="result-time">Time (mm:ss or h:mm:ss)</label>
+        <input type="text" id="result-time" name="time" inputmode="numeric" placeholder="25:30" pattern="[0-9:]+" required>
+      </div>
+      <button type="submit">Save result</button>
+    </form>
+    {% if r %}
+    <form method="post" action="/result/delete" class="inline" style="margin-top:12px">
+      <input type="hidden" name="date" value="{{ r.date }}">
+      <button type="submit" class="linkish">Delete the {{ r.date|longdate }} result</button>
+    </form>
+    {% endif %}
+  </details>
 </section>
 {% endblock %}
