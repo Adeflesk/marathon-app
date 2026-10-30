@@ -34,6 +34,23 @@ Strides are listed one by one but not judged, since they go by feel; the review 
 around them stayed easy. Heart-rate drift (second half against first) under 5% means the effort stayed
 steady. Strides days show no drift figure, because the strides lift your heart rate on purpose.
 
+## Progress
+
+The Progress tab answers one question: **are you on course for your goal?** Log a race or time trial (under
+"Your paces" on This week) and it predicts your marathon: on course, within reach (up to 5% off) or a stretch.
+Under the verdict, four reasons: the plan (km done over the last 4 weeks, strength sessions), fitness (heart
+rate on easy runs at 6:45/km, week by week; lower is fitter), long runs (did heart rate hold steady) and the
+ankle (flag, hops, pain).
+
+When the goal isn't on course, it suggests goals that fit: a realistic stretch (today's prediction, improved
+by about 1% per 4 weeks of training left, at most 4%) and today's prediction. **Train for 4:09** changes
+your goal, and marathon pace, the sessions and the watch files follow; **Back to 3:59** puts the original
+back exactly. The app never changes the goal by itself.
+
+Below: charts of fitness, long runs and km planned against done, the ankle tests against their targets, and
+a summary of every finished week with one focus for the next. Last week's summary also shows on This week
+on Monday and Tuesday. A week no sync has covered says so, since runs may be missing.
+
 ## Days
 
 Runs are Monday (easy), Wednesday (the quality session), Saturday (easy) and Sunday (long); nothing on

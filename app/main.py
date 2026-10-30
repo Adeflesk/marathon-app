@@ -11,7 +11,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from . import ankle, db, garmin, moves, progression, review, smashrun, strength
+from . import ankle, db, garmin, moves, progress, progression, review, smashrun, strength
 from .config import load_settings, race_date
 from .pace_engine import fmt_pace, fmt_time, from_result, pace_per_mi, parse_time
 from .plan import DAYS, _half, feedback_factor, generate, volume_caps
@@ -101,6 +101,28 @@ def actual_by_date() -> dict[str, dict]:
     return out
 
 
+GOAL_SETTINGS = "settings"  # a stored goal meaning "back to whatever settings.json says"
+
+
+def apply_goal(s: dict, t: date) -> None:
+    """The goal the user last picked (on or before `t`) overrides the settings' goal and its pace.
+
+    Picking the settings' goal again restores the settings' paces exactly. Also sets s["settings_goal"]
+    and s["goal_changes"] ([{"date", "from", "to"}], oldest first) for the progress page.
+    """
+    s["settings_goal"] = current = s["goal_time"]
+    s["goal_changes"] = []
+    for g in db.goals():
+        goal = s["settings_goal"] if g["goal_time"] == GOAL_SETTINGS else g["goal_time"]
+        if g["date"] <= t.isoformat() and goal != current:
+            s["goal_changes"].append({"date": g["date"], "from": current, "to": goal})
+            current = goal
+    if current != s["settings_goal"]:
+        s["goal_time"] = current
+        s["paces"]["marathon"] = round(parse_time(current) / 42.195)
+        s["paces"]["subthreshold"] = s["paces"]["marathon"] - 9
+
+
 def apply_result(s: dict, t: date) -> None:
     """The latest race or time trial on or before `t` sets the paces, with a read of the goal."""
     latest = next((r for r in reversed(db.results()) if r["date"] <= t.isoformat()), None)
@@ -110,8 +132,8 @@ def apply_result(s: dict, t: date) -> None:
         s["result"] = {**latest, **read}
 
 
-def volume_guard(weeks: list[dict], actual: dict, checkins: dict, t: date, base: float) -> dict[int, dict]:
-    """plan.volume_caps from the stored facts: km run per plan week, and which weeks a sync has covered."""
+def volume_guard(weeks: list[dict], actual: dict, checkins: dict, t: date, base: float) -> tuple[dict[int, dict], set[int]]:
+    """plan.volume_caps from the stored facts, and the weeks a sync has covered (the only ones it counts)."""
     last = db.get_meta("last_sync")
     synced = date.fromisoformat(last[:10]) if last else None
     run = {w["week"]: 0.0 for w in weeks}
@@ -127,12 +149,13 @@ def volume_guard(weeks: list[dict], actual: dict, checkins: dict, t: date, base:
              if synced and w["start"] + timedelta(days=6) < t and w["start"] + timedelta(days=6) <= synced}
     planned = [{"week": w["week"], "phase": w["phase"],
                 "km": w["target_km"] * feedback_factor(checkins.get(w["week"] - 1))} for w in weeks]
-    return volume_caps(planned, run, known, base)
+    return volume_caps(planned, run, known, base), known
 
 
 def build_view():
     s = load_settings()
     t = today()
+    apply_goal(s, t)
     apply_result(s, t)
     weeks = generate(s, t)
     actual = actual_by_date()
@@ -142,13 +165,14 @@ def build_view():
         checkins = {r["week"]: dict(r) for r in c.execute("SELECT * FROM checkins")}
     st = ankle_state(t, weeks, list(checkins.values()))
     moved = moves.index(db.moves())
-    caps = volume_guard(weeks, actual, checkins, t, s["base_weekly_km"])
+    caps, synced = volume_guard(weeks, actual, checkins, t, s["base_weekly_km"])
     # Each run is scaled by its own week's check-in or the missed-week guard (the smaller wins), then follows
     # any move (relocate takes it across Sunday). Strength follows the check-in only.
     for w in weeks:
         factor = feedback_factor(checkins.get(w["week"] - 1))
         w["factor"] = factor
         w["checkin"] = checkins.get(w["week"])
+        w["synced"] = w["week"] in synced  # over, and a sync has covered it
         cap = caps.get(w["week"])
         run_factor = factor
         w["guard"] = None
@@ -335,6 +359,12 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
     tests_this_week = {x["test"]: x for x in st["tests"]
                        if upcoming and upcoming["start"].isoformat() <= x["date"] <= week_end.isoformat()}
     move_warning = _move_warning(weeks, confirm, _day(on), _day(orig))
+    # last week's summary on Monday and Tuesday
+    last_summary = None
+    if t.weekday() < 2:
+        done_weeks = progress.summaries(weeks, s, st, db.results(), t)
+        if done_weeks and done_weeks[0]["end"] == t - timedelta(days=t.weekday() + 1):
+            last_summary = done_weeks[0]
     expires = smashrun.token_expiry() if os.environ.get("SMASHRUN_TOKEN") else None
     left = (expires - t).days if expires else None
     token_warning = {"expires": expires, "days": left} if left is not None and left <= smashrun.TOKEN_WARN_DAYS else None
@@ -370,12 +400,39 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
             "hop_stage": st["hop_stage"],
             "injured_side": s["injured_side"],
             "move_warning": move_warning,
+            "last_summary": last_summary,
             "token_warning": token_warning,
             "msg": msg,
             "paces": s["paces"],
             "goal": s["goal_time"],
         },
     )
+
+
+@app.get("/progress")
+def progress_page(request: Request, msg: str = ""):
+    s, weeks = build_view()
+    t = today()
+    st = weeks[0]["ankle_state"]
+    ref_pace = load_settings()["paces"]["easy"]  # fixed, so a new result doesn't break the fitness line
+    verdict = progress.verdict(s)
+    options = progress.goal_options(verdict["predicted"], parse_time(s["goal_time"]), parse_time(s["settings_goal"]),
+                                    max(0, (race_date(s) - t).days // 7))
+    if verdict["state"] in ("none", "on course"):  # suggestions only when the goal isn't on course
+        options = [o for o in options if o["kind"] == "back"]
+    current = next((w for w in weeks if w["is_current"]), None)
+    cutback = next((w for w in weeks if w["phase"] == "Cutback" and w["start"] + timedelta(days=6) >= t), None)
+    time_trial = {"week": cutback["week"], "start": cutback["start"],
+                  "end": cutback["start"] + timedelta(days=6)} if cutback else None
+    return templates.TemplateResponse(request, "progress.html", {
+        "time_trial": time_trial,
+        "s": s, "msg": msg, "today": t, "verdict": verdict, "options": options, "week": current,
+        "n_weeks": len(weeks), "why": progress.why_rows(weeks, t, ref_pace),
+        "fitness": progress.fitness_trend(weeks, ref_pace), "ref_pace": ref_pace,
+        "long_runs": progress.long_runs(weeks), "plan": progress.plan_bars(weeks),
+        "ankle": progress.ankle_table(weeks, st["tests"]), "ankle_state": st,
+        "summaries": progress.summaries(weeks, s, st, db.results(), t),
+    })
 
 
 @app.get("/plan")
@@ -596,6 +653,21 @@ async def ankle_tests(request: Request):
     for key, injured, other in rows:
         db.save_test(d.isoformat(), key, injured, other)
     return _back("tests")
+
+
+@app.post("/goal")
+def goal_change(goal: str = Form("")):
+    try:
+        seconds = parse_time(goal.strip())
+    except ValueError:
+        seconds = 0
+    if not 2.5 * 3600 <= seconds <= 6 * 3600:
+        return RedirectResponse(f"/progress?{urlencode({'msg': 'Not changed: that is not a marathon time.'})}#verdict",
+                                status_code=303)
+    back = seconds == parse_time(load_settings()["goal_time"])
+    db.save_goal(today().isoformat(), GOAL_SETTINGS if back else fmt_time(seconds))
+    msg = f"Goal changed to {fmt_time(seconds)[:-3]}. The plan now follows it."
+    return RedirectResponse(f"/progress?{urlencode({'msg': msg})}#verdict", status_code=303)
 
 
 RESULT_KM = {"5": 5.0, "10": 10.0, "21.1": 21.0975}

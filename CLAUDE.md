@@ -84,19 +84,26 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
 - `app/moves.py` — pure: applies the user's moved/skipped sessions to the generated plan. `shift()` marks an
   item (`orig_date`, then `moved_from` + new `date`, or `skipped`); `relocate()` puts items moved past Sunday
   into the next week; `clash()` holds the warning rules; `can_move()` stops at race day and the plan's end.
-- `app/main.py` — `build_view()` is the hub every page uses: `apply_result()` (the latest logged result
+- `app/main.py` — `build_view()` is the hub every page uses: `apply_goal()` (the latest `goals` row overrides
+  `goal_time` and marathon pace; the settings goal again restores exact settings paces) → `apply_result()` (the latest logged result
   sets `s["paces"]` and `s["result"]` via `pace_engine.from_result`) → generate plan → scale each week by the
   smaller of the *previous* week's check-in factor and the missed-week guard (`volume_guard()`; known weeks
-  are over and covered by `meta.last_sync`; strength follows the check-in only) → shift and relocate moved runs → join actual runs from SQLite by date (a day with two runs
+  are over and covered by `meta.last_sync`, marked `w["synced"]`; strength follows the check-in only) → shift and relocate moved runs → join actual runs from SQLite by date (a day with two runs
   shares its actual; the longer run gets the review) → compute ankle context and attach strength sessions
   (shifted before logs are looked up), suggestions, and snacks → relocate strength → mark `movable`.
-  Routes: `/`, `/plan`, `/strength`, `/equipment` (GET/POST), `/workout/{date}.fit?n=`,
+  Routes: `/`, `/plan`, `/progress`, `/goal` (POST), `/strength`, `/equipment` (GET/POST), `/workout/{date}.fit?n=`,
   `/workouts/week/{n}.zip`, `/sync`, `/checkin`, `/strength/log` (POST), `/snack` (POST), `/ankle/check` (POST),
   `/ankle/tests` (POST), `/result` and `/result/delete` (POST), `/move` (POST; warns via `/?confirm=…` on a clash), `/move/undo` (POST).
   POSTs redirect with a 303 to their anchor.
 - `app/pace_engine.py` — pace maths. `from_result()` turns a result into paces and a goal verdict: easy,
   long, threshold and interval from fitness; marathon stays the settings' goal pace unless within 10 s/km of
   threshold or the goal is >5% off; sub-threshold MP − 9, never quicker than threshold.
+- `app/progress.py` — pure, the Progress page: `fitness_trend` (median HR of easy/long km splits within ±15 s/km
+  of the *settings* easy pace, km 1 dropped, ≥3 splits a week), `long_runs` (drift colours), `plan_bars`,
+  `verdict` (from `s["result"]`), `goal_options` (stretch = prediction × (1 − min(4%, 1% per 4 weeks left)),
+  prediction, way back), `why_rows`, `ankle_table`, `summaries` (completed weeks; "Next week" = first rule
+  that applies: ankle trigger, next week held, easy too quick, long-run drift, snacks < 4, strength missed,
+  test week).
 - `app/garmin.py` — builds FIT workout files with `fit-tool`; pace targets are speed ranges (m/s) around
   `settings.paces`. Repeat blocks become a `REPEAT_UNTIL_STEPS_CMPLT` step after their steps, pointing back
   to the block's first step index, mirroring Garmin Connect's own files (samples in `samples/garmin/`,
@@ -117,7 +124,7 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   `checkins` (keyed by week number), `strength_logs` (logged sets, weight, reps, rating, ankle pain),
   `snack_logs` (daily ankle snack ticks), `ankle_tests` (readiness test values), `ankle_checks` (morning ankle checks),
   `moves` (a session's original date + `run`/`A`/`B` → new date, or NULL when skipped), `results` (races and
-  time trials: date, km, seconds) and `meta` (key/value; `last_sync` is written by a successful sync).
+  time trials: date, km, seconds), `goals` (goal changes: date, goal_time; the latest wins) and `meta` (key/value; `last_sync` is written by a successful sync).
   Schema is `CREATE IF NOT EXISTS` on startup; there are no migrations. `DB_PATH` env var overrides `data/marathon.db`.
 
 ## Conventions

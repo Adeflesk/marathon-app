@@ -212,6 +212,14 @@
 
 {% if strength_session and not strength_hero %}{{ sx.strength_card(strength_session, today) }}{% endif %}
 {% for extra in strength_sessions[1:] %}{{ sx.strength_card(extra, today, false, "strength-" ~ extra.key) }}{% endfor %}
+{% if last_summary %}{% set ls = last_summary %}
+<section class="stack summary-card" aria-labelledby="last-week-h">
+  <h2 id="last-week-h">Last week, week {{ ls.week }}</h2>
+  <p class="mute">{{ ls.done|km }} of {{ ls.planned|km }} km. {{ ls.sentences[1:]|join(' ') }}</p>
+  <p><strong>This week:</strong> {{ ls.next }}</p>
+  <p><a href="/progress">Your progress</a></p>
+</section>
+{% endif %}
 {% if tests_due %}{{ sx.test_card(today, tests, injured_side) }}{% endif %}
 {% if snack_today %}{{ sx.snack_card(snack_today) }}{% endif %}
 

@@ -10,11 +10,11 @@ Each item gets a design in `docs/superpowers/specs/` before any code. Tick items
 
 Everything below uses data the app already stores (splits, laps, tests, logs, checks). Mostly a new page.
 
-- [ ] **Easy-run fitness trend:** heart rate at a fixed easy pace, and pace at a fixed heart rate, week by
+- [x] **Easy-run fitness trend:** heart rate at a fixed easy pace, and pace at a fixed heart rate, week by
       week. The clearest sign the aerobic base is improving.
-- [ ] **Long-run steadiness:** heart-rate drift on each long run as they get longer.
-- [ ] **Ankle trend:** test results against their gates, pain scores over time, hop and balance stages.
-- [ ] **Weekly summary** each Sunday: runs done against the plan, strength, ankle and one focus for next
+- [x] **Long-run steadiness:** heart-rate drift on each long run as they get longer.
+- [x] **Ankle trend:** test results against their gates, pain scores over time, hop and balance stages.
+- [x] **Weekly summary** each Sunday: runs done against the plan, strength, ankle and one focus for next
       week (the week 1 review, written by the app).
 
 ## 2. A plan that responds to what was actually done
