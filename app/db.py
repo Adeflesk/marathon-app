@@ -89,6 +89,12 @@ def init() -> None:
                 km REAL NOT NULL,
                 seconds INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS goals (
+                id INTEGER PRIMARY KEY,
+                date TEXT NOT NULL,
+                goal_time TEXT NOT NULL,
+                created TEXT
+            );
             CREATE TABLE IF NOT EXISTS meta (
                 key TEXT PRIMARY KEY,
                 value TEXT
@@ -210,3 +216,15 @@ def get_meta(key: str) -> str | None:
     with conn() as c:
         row = c.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
     return row["value"] if row else None
+
+
+def save_goal(day: str, goal_time: str) -> None:
+    """The goal the user picked on `day` ("H:MM:SS"). The latest one is the goal."""
+    with conn() as c:
+        c.execute("INSERT INTO goals (date, goal_time, created) VALUES (?,?,?)",
+                  (day, goal_time, datetime.now().isoformat(timespec="seconds")))
+
+
+def goals() -> list[dict]:
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM goals ORDER BY id")]

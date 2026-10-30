@@ -101,6 +101,24 @@ def actual_by_date() -> dict[str, dict]:
     return out
 
 
+def apply_goal(s: dict, t: date) -> None:
+    """The goal the user last picked (on or before `t`) overrides the settings' goal and its pace.
+
+    Picking the settings' goal again restores the settings' paces exactly. Also sets s["settings_goal"]
+    and s["goal_changes"] ([{"date", "from", "to"}], oldest first) for the progress page.
+    """
+    s["settings_goal"] = current = s["goal_time"]
+    s["goal_changes"] = []
+    for g in db.goals():
+        if g["date"] <= t.isoformat() and g["goal_time"] != current:
+            s["goal_changes"].append({"date": g["date"], "from": current, "to": g["goal_time"]})
+            current = g["goal_time"]
+    if current != s["settings_goal"]:
+        s["goal_time"] = current
+        s["paces"]["marathon"] = round(parse_time(current) / 42.195)
+        s["paces"]["subthreshold"] = s["paces"]["marathon"] - 9
+
+
 def apply_result(s: dict, t: date) -> None:
     """The latest race or time trial on or before `t` sets the paces, with a read of the goal."""
     latest = next((r for r in reversed(db.results()) if r["date"] <= t.isoformat()), None)
@@ -133,6 +151,7 @@ def volume_guard(weeks: list[dict], actual: dict, checkins: dict, t: date, base:
 def build_view():
     s = load_settings()
     t = today()
+    apply_goal(s, t)
     apply_result(s, t)
     weeks = generate(s, t)
     actual = actual_by_date()
@@ -596,6 +615,20 @@ async def ankle_tests(request: Request):
     for key, injured, other in rows:
         db.save_test(d.isoformat(), key, injured, other)
     return _back("tests")
+
+
+@app.post("/goal")
+def goal_change(goal: str = Form("")):
+    try:
+        seconds = parse_time(goal.strip())
+    except ValueError:
+        seconds = 0
+    if not 2.5 * 3600 <= seconds <= 6 * 3600:
+        return RedirectResponse(f"/progress?{urlencode({'msg': 'Not changed: that is not a marathon time.'})}#verdict",
+                                status_code=303)
+    db.save_goal(today().isoformat(), fmt_time(seconds))
+    msg = f"Goal changed to {fmt_time(seconds)[:-3]}. The plan now follows it."
+    return RedirectResponse(f"/progress?{urlencode({'msg': msg})}#verdict", status_code=303)
 
 
 RESULT_KM = {"5": 5.0, "10": 10.0, "21.1": 21.0975}
