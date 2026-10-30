@@ -124,6 +124,7 @@ def test_why_rows_warn():
 def test_why_rows_with_nothing_to_go_on():
     r = rows([full_week(1, past=False, current=True)])
     assert all(v["ok"] for v in r.values())
+    assert r["long"]["text"] == "the last one held steady"
 
 
 TESTS_W1 = [{"date": "2026-10-23", "test": t, "injured": i, "other": o} for t, i, o in
@@ -139,3 +140,13 @@ def test_ankle_table_from_week_one_tests():
     assert cells["Eyes-closed balance"] == {"value": 28, "met": False}
     assert cells["Y-balance (worst reach)"] == {"value": 87.5, "met": False}
     assert [r["target"] for r in t["rows"]] == ["25", "30 s", "90%"]
+
+
+def test_goal_options_without_a_prediction_only_offer_the_way_back():
+    assert progress.goal_options(None, 14340, 14340, 10) == []
+    assert [o["kind"] for o in progress.goal_options(None, 14940, 14340, 10)] == ["back"]
+
+
+def test_plan_row_after_one_week_reads_right():
+    r = rows([full_week(1), full_week(2, past=False, current=True)])
+    assert r["plan"]["text"].startswith("100% of planned km last week,")

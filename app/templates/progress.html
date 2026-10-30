@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Progress{% endblock %}
+{% macro short(g) %}{{ g[:-3] if g.endswith(':00') else g }}{% endmacro %}
+{% block head %}
+<style>
+  .verdict { border-left: 4px solid var(--line); padding: 4px 0 4px 14px; margin-top: 20px; }
+  .verdict.on-course { border-color: var(--good); }
+  .verdict.within-reach { border-color: var(--steady); }
+  .verdict.stretch { border-color: var(--warn); }
+  .verdict h1 { font-size: clamp(1.75rem, 8vw, 2.25rem); line-height: 1.1; margin: 4px 0 8px; }
+  .why { list-style: none; padding: 0; margin: 14px 0 0; }
+  .why li { padding: 6px 0 6px 28px; position: relative; }
+  .why li::before { position: absolute; left: 0; font-weight: 700; }
+  .why li.ok::before { content: "✓"; color: var(--good); }
+  .why li.warn::before { content: "!"; color: var(--warn); left: 6px; }
+  .goals { display: grid; gap: 10px; margin-top: 12px; }
+  .goal { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--surface); }
+  .goal b { font-size: 1.25rem; }
+  .goal form { margin-top: 8px; }
+  svg.chart { width: 100%; height: auto; background: var(--surface); border-radius: 8px; margin-top: 8px; }
+  svg.chart text { fill: var(--mute); font-size: 10px; }
+  .c-line { fill: none; stroke: var(--ink); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .c-dot { fill: var(--ink); }
+  .c-good { fill: var(--good); } .c-warn { fill: var(--warn); } .c-bad { fill: var(--bad); } .c-none { fill: var(--line); }
+  .c-planned { fill: none; stroke: var(--easy); stroke-width: 1.5; }
+  .c-done { fill: var(--easy); }
+  .c-held { fill: var(--steady); }
+  table.ankle { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: .9375rem; }
+  table.ankle th, table.ankle td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: right; }
+  table.ankle th:first-child, table.ankle td:first-child { text-align: left; }
+  .met { color: var(--good); font-weight: 650; }
+  .summaries details { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+  .summaries summary { cursor: pointer; font-weight: 600; }
+  .summaries p { margin: 8px 0 0; }
+</style>
+{% endblock %}
+{% block body %}
+{% if msg %}<p class="notice" role="status" style="margin-top:16px">{{ msg }}</p>{% endif %}
+{% set v = verdict %}
+{% set g = short(v.goal) %}
+<section id="verdict" class="verdict {{ v.state|replace(' ', '-') }}" aria-labelledby="verdict-h">
+  <p class="mute small">{% if week %}Week {{ week.week }} of {{ n_weeks }}{% endif %}</p>
+  <h1 id="verdict-h">
+    {%- if v.state == 'none' %}Not enough to call yet
+    {%- elif v.state == 'on course' %}On course for {{ g }}
+    {%- elif v.state == 'within reach' %}Within reach of {{ g }}
+    {%- else %}{{ g }} is a stretch right now{% endif -%}
+  </h1>
+  {% if v.state == 'none' %}
+  <p>Run a 5 km flat out (a parkrun is ideal) and log it under <a href="/#paces">Your paces</a>. This page then predicts your marathon{% if time_trial %}; the week {{ time_trial.week }} cutback ({{ time_trial.start.strftime('%-d %b') }} – {{ time_trial.end.strftime('%-d %b') }}) is a good time{% endif %}.</p>
+  {% else %}
+  {% set r = s.result %}
+  {% set dist = {5.0: '5 km', 10.0: '10 km', 21.0975: 'half marathon'}.get(r.km, r.km|km ~ ' km') %}
+  <p>Your {{ dist }} on {{ r.date|longdate }} {% set mins = (r.predicted / 60)|round|int %}predicts <strong>{{ mins // 60 }}:{{ '%02d'|format(mins % 60) }}</strong> for the marathon.</p>
+  {% endif %}
+  {% if s.goal_changes %}{% set last = s.goal_changes[-1] %}
+  <p class="mute small">Goal changed from {{ short(last.from) }} to {{ short(last.to) }} on {{ last.date|longdate }}.</p>
+  {% endif %}
+  <ul class="why">
+    {% set LABEL = {"plan": "Plan", "fitness": "Fitness", "long": "Long runs", "ankle": "Ankle"} %}
+    {% for row in why %}<li class="{{ 'ok' if row.ok else 'warn' }}"><strong>{{ LABEL[row.key] }}:</strong> {{ row.text }}</li>{% endfor %}
+  </ul>
+  {% if options %}
+  <h2 style="margin-top:20px">{% if v.state in ('within reach', 'stretch') %}Goals that fit where you are{% else %}Your goal{% endif %}</h2>
+  <div class="goals">
+    {% for o in options %}
+    <div class="goal">
+      <b>{{ short(o.time) }}</b> · marathon pace {{ o.mp|pace }}/km
+      <p class="mute small" style="margin:4px 0 0">{{ o.why }}</p>
+      <form method="post" action="/goal">
+        <input type="hidden" name="goal" value="{{ o.time }}">
+        <button type="submit" class="button quiet">{{ 'Back to ' ~ short(o.time) if o.kind == 'back' else 'Train for ' ~ short(o.time) }}</button>
+      </form>
+    </div>
+    {% endfor %}
+    {% if v.state in ('within reach', 'stretch') %}
+    <div class="goal"><b>Keep {{ g }}</b><p class="mute small" style="margin:4px 0 0">Marathon-pace work stays at {{ s.paces.marathon|pace }}/km until a faster result comes in.</p></div>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+<section aria-labelledby="fit-h" style="margin-top:28px">
+  <h2 id="fit-h">Fitness</h2>
+  <p class="mute">Heart rate on easy runs at the same pace ({{ ref_pace|pace }}/km), week by week. Lower is fitter.</p>
+  {% set pts = fitness|selectattr('hr')|list %}
+  {% if pts|length >= 2 %}
+  {% set lo = (pts|map(attribute='hr')|min) - 3 %}{% set hi = (pts|map(attribute='hr')|max) + 3 %}
+  {% set n = fitness|length %}
+  <svg class="chart" viewBox="0 0 340 100" role="img" aria-label="Easy-pace heart rate: {% for x in pts %}week {{ x.week }} {{ x.hr|round|int }}{{ ', ' if not loop.last }}{% endfor %}">
+    {% set coords = [] %}
+    {% for x in pts %}{% set _ = coords.append(((20 + 300 * (x.week - fitness[0].week) / ([n - 1, 1]|max))|round(1))|string ~ ',' ~ ((10 + 70 * (hi - x.hr) / (hi - lo))|round(1))|string) %}{% endfor %}
+    <polyline class="c-line" points="{{ coords|join(' ') }}"/>
+    {% for c in coords %}{% set xy = c.split(',') %}<circle class="c-dot" cx="{{ xy[0] }}" cy="{{ xy[1] }}" r="3"/>{% endfor %}
+    <text x="20" y="95">week {{ pts[0].week }}: {{ pts[0].hr|round|int }}</text>
+    <text x="320" y="95" text-anchor="end">now: {{ pts[-1].hr|round|int }}</text>
+  </svg>
+  {% else %}
+  <p class="mute small">Not enough easy runs near {{ ref_pace|pace }}/km yet. It needs two weeks with three or more such kilometres.</p>
+  {% endif %}
+</section>
+
+<section aria-labelledby="long-h" style="margin-top:24px">
+  <h2 id="long-h">Long runs</h2>
+  <p class="mute">Each long run's length. Green held steady, amber drifted, red drifted a lot, grey has no heart-rate data. M marks a marathon-pace finish.</p>
+  {% if long_runs %}
+  {% set mx = long_runs|map(attribute='km')|max %}
+  {% set bw = [300 / long_runs|length, 34]|min %}
+  <svg class="chart" viewBox="0 0 340 100" role="img" aria-label="Long runs: {% for r in long_runs %}{{ r.km|km }} km{{ ', ' if not loop.last }}{% endfor %}">
+    {% for r in long_runs %}
+    {% set h = 70 * r.km / mx %}
+    <rect class="c-{{ r.colour }}" x="{{ (20 + loop.index0 * bw)|round(1) }}" y="{{ (85 - h)|round(1) }}" width="{{ (bw - 4)|round(1) }}" height="{{ h|round(1) }}"><title>Week {{ r.week }}: {{ r.km|km }} km{% if r.drift is not none %}, drift {{ r.drift }}%{% endif %}</title></rect>
+    {% if r.mp %}<text x="{{ (20 + loop.index0 * bw + (bw - 4) / 2)|round(1) }}" y="{{ (82 - h)|round(1) }}" text-anchor="middle">M</text>{% endif %}
+    {% endfor %}
+    <text x="20" y="97">{{ long_runs[0].km|km }} km</text>
+    <text x="320" y="97" text-anchor="end">{{ long_runs[-1].km|km }} km</text>
+  </svg>
+  {% else %}<p class="mute small">No long runs synced yet.</p>{% endif %}
+</section>
+
+<section aria-labelledby="plan-h" style="margin-top:24px">
+  <h2 id="plan-h">Plan</h2>
+  <p class="mute">Km planned (outline) and done (filled) each week. Yellow marks a week held after missed running.</p>
+  {% if plan %}
+  {% set mx = [plan|map(attribute='planned')|max, plan|map(attribute='done')|max]|max or 1 %}
+  {% set bw = [300 / plan|length, 34]|min %}
+  <svg class="chart" viewBox="0 0 340 100" role="img" aria-label="Planned and done km: {% for b in plan %}week {{ b.week }} {{ b.done|km }} of {{ b.planned|km }}{{ ', ' if not loop.last }}{% endfor %}">
+    {% for b in plan %}
+    {% set x = 20 + loop.index0 * bw %}
+    <rect class="c-done" x="{{ x|round(1) }}" y="{{ (85 - 70 * b.done / mx)|round(1) }}" width="{{ (bw - 4)|round(1) }}" height="{{ (70 * b.done / mx)|round(1) }}"/>
+    <rect class="c-planned" x="{{ x|round(1) }}" y="{{ (85 - 70 * b.planned / mx)|round(1) }}" width="{{ (bw - 4)|round(1) }}" height="{{ (70 * b.planned / mx)|round(1) }}"/>
+    {% if b.held %}<rect class="c-held" x="{{ x|round(1) }}" y="88" width="{{ (bw - 4)|round(1) }}" height="4"/>{% endif %}
+    {% endfor %}
+    <text x="20" y="99">week {{ plan[0].week }}</text>
+    <text x="320" y="99" text-anchor="end">week {{ plan[-1].week }}</text>
+  </svg>
+  {% endif %}
+</section>
+
+<section aria-labelledby="ankle-h" style="margin-top:24px">
+  <h2 id="ankle-h">Ankle</h2>
+  {% if ankle.columns %}
+  <table class="ankle">
+    <tr><th>Test, {{ s.injured_side }} side</th>{% for c in ankle.columns %}<th>Wk {{ c }}</th>{% endfor %}<th>Target</th></tr>
+    {% for row in ankle.rows %}
+    <tr><td>{{ row.name }}</td>
+      {% for cell in row.cells %}<td>{% if cell %}<span class="{{ 'met' if cell.met }}">{{ cell.value|round(1)|string|replace('.0', '') }}{% if row.target.endswith('%') %}%{% elif row.target.endswith('s') %} s{% endif %}{{ ' ✓' if cell.met }}</span>{% else %}–{% endif %}</td>{% endfor %}
+      <td>{{ row.target }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="mute small">No ankle tests logged yet.</p>{% endif %}
+  {% set st = ankle_state %}
+  <p class="mute small" style="margin-top:8px">
+    Hops: {{ 'not started' if st.hop_stage is none else 'stage ' ~ st.hop_stage }} · Balance: stage {{ st.balance_stage }} ·
+    {% if st.flag_until %}Ankle flag up until {{ st.flag_until.strftime('%-d %b') }}{% else %}No ankle flag{% endif %}
+  </p>
+</section>
+
+<section class="summaries" aria-labelledby="sum-h" style="margin-top:24px">
+  <h2 id="sum-h">Weekly summaries</h2>
+  {% for x in summaries %}
+  <details{{ ' open' if loop.first }}>
+    <summary>Week {{ x.week }} · {{ x.start.strftime('%-d %b') }} – {{ x.end.strftime('%-d %b') }} · {{ x.done|km }} of {{ x.planned|km }} km</summary>
+    <p>{{ x.sentences|join(' ') }}</p>
+    <p><strong>Next week:</strong> {{ x.next }}</p>
+  </details>
+  {% else %}
+  <p class="mute small">The first summary comes once week 1 is over.</p>
+  {% endfor %}
+</section>
+{% endblock %}

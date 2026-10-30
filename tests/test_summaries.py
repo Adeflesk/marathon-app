@@ -10,7 +10,7 @@ def _clear():
     db.init()
     with db.conn() as c:
         for table in ("activities", "run_details", "strength_logs", "snack_logs", "ankle_checks", "checkins",
-                      "results", "goals", "moves"):
+                      "results", "goals", "moves", "meta"):
             c.execute(f"DELETE FROM {table}")
 
 
@@ -72,8 +72,25 @@ def test_no_summary_for_current_week(monkeypatch):
 
 def test_low_week_focus(monkeypatch):
     ran("2026-12-16", 10, 405)  # week 9: 10 of 40 km
+    db.set_meta("last_sync", "2026-12-20T19:00:00")
     out = summaries(monkeypatch, date(2026, 12, 21))
     assert out[0]["week"] == 9 and out[0]["next"].startswith("Ease back in")
+    assert not any("Not synced" in x for x in out[0]["sentences"])
+
+
+def test_unsynced_week_says_so_and_claims_no_hold(monkeypatch):
+    ran("2026-12-16", 10, 405)
+    db.set_meta("last_sync", "2026-12-17T07:00:00")  # before week 9 ended
+    w9 = summaries(monkeypatch, date(2026, 12, 21))[0]
+    assert "Not synced since this week ended, so runs may be missing." in w9["sentences"]
+    assert not w9["next"].startswith("Ease back in")
+
+
+def test_one_snack_day_reads_right(monkeypatch):
+    week_one()
+    db.toggle_snack("2026-10-19", "band_eversion")
+    w1 = summaries(monkeypatch, date(2026, 10, 27))[0]
+    assert "Ankle snacks on 1 day." in w1["sentences"]
 
 
 def test_ankle_focus_wins(monkeypatch):

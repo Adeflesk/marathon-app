@@ -77,13 +77,15 @@ def _hms(seconds: float) -> str:
     return f"{s // 3600}:{(s % 3600) // 60:02d}:{s % 60:02d}"
 
 
-def goal_options(predicted: float, goal_s: float, settings_goal_s: float, weeks_left: int) -> list[dict]:
+def goal_options(predicted: float | None, goal_s: float, settings_goal_s: float, weeks_left: int) -> list[dict]:
     """Goals that fit where you are: a realistic stretch, today's prediction, and the way back to the
-    settings' goal once it has been changed."""
-    stretch = round(predicted * (1 - min(MAX_GAIN, WEEKLY_GAIN * weeks_left)) / 60) * 60
-    today = -(-int(predicted) // 60) * 60  # rounded up to the minute
-    picks = [(stretch, "stretch", f"A realistic stretch: needs the next {weeks_left} weeks done well."),
-             (today, "prediction", "What today's fitness predicts.")]
+    settings' goal once it has been changed. Without a prediction, only the way back."""
+    picks = []
+    if predicted is not None:
+        stretch = round(predicted * (1 - min(MAX_GAIN, WEEKLY_GAIN * weeks_left)) / 60) * 60
+        today = -(-int(predicted) // 60) * 60  # rounded up to the minute
+        picks = [(stretch, "stretch", f"A realistic stretch: needs the next {weeks_left} weeks done well."),
+                 (today, "prediction", "What today's fitness predicts.")]
     if goal_s != settings_goal_s:
         picks.append((settings_goal_s, "back", "Your original goal."))
     out, taken = [], [goal_s]
@@ -109,7 +111,8 @@ def why_rows(weeks: list[dict], t: date, ref_pace: float) -> list[dict]:
         share = sum(w["actual_km"] for w in done) / (sum(w["target_km"] for w in done) or 1)
         sessions = [x for w in done for x in w.get("strength", []) if not x.get("skipped")]
         held = [w["week"] for w in done if w.get("guard")]
-        text = (f"{round(100 * share)}% of planned km over the last {len(done)} weeks, "
+        span = "last week" if len(done) == 1 else f"over the last {len(done)} weeks"
+        text = (f"{round(100 * share)}% of planned km {span}, "
                 f"{sum(1 for x in sessions if x['done'])} of {len(sessions)} strength sessions")
         if held:
             text += ", week " + ", ".join(map(str, held)) + " held"
@@ -129,7 +132,8 @@ def why_rows(weeks: list[dict], t: date, ref_pace: float) -> list[dict]:
     drifted = sum(1 for r in recent if r["drift"] >= DRIFT_WARN)
     long = {"key": "long", "ok": drifted < 2,
             "text": (f"{drifted} of the last {len(recent)} drifted" if drifted else
-                     f"the last {len(recent)} held steady" if recent else "none with heart-rate data yet")}
+                     ("the last one held steady" if len(recent) == 1 else f"the last {len(recent)} held steady")
+                     if recent else "none with heart-rate data yet")}
 
     st = weeks[0]["ankle_state"]
     since = (t - timedelta(days=28)).isoformat()
@@ -205,6 +209,8 @@ def _summary(w: dict, weeks: list[dict], s: dict, st: dict, results: list[dict])
     runs = [wo for wo in w["workouts"] if not wo.get("skipped") and wo["km"] > 0]
     ran = [wo for wo in runs if wo.get("actual_km") is not None]
     sentences = [f"Ran {w['actual_km']:g} of {w['target_km']:g} km: {len(ran)} of {len(runs)} runs."]
+    if not w.get("synced"):
+        sentences.append("Not synced since this week ended, so runs may be missing.")
     for wo in runs:
         r = wo.get("review")
         if r and r.get("headline"):
@@ -222,7 +228,7 @@ def _summary(w: dict, weeks: list[dict], s: dict, st: dict, results: list[dict])
 
     snack_days = len({x["date"] for x in st["snacks"] if _in(x["date"], w)})
     worse = [c for c in st["checks"] if c.get("worse") and _in(c["date"], w)]
-    sentences.append(f"Ankle snacks on {snack_days} days" +
+    sentences.append(f"Ankle snacks on {snack_days} day{'' if snack_days == 1 else 's'}" +
                      (f"; morning check worse on {len(worse)} day{'s' if len(worse) > 1 else ''}." if worse else "."))
     ci = w.get("checkin")
     sentences.append(f"Check-in: feel {ci['feel']}, ankle pain {ci['pain']}." if ci else "No check-in.")
@@ -243,10 +249,11 @@ def _summary(w: dict, weeks: list[dict], s: dict, st: dict, results: list[dict])
     long = next((wo for wo in ran if wo["type"] == "long"), None)
     drift = (long.get("review") or {}).get("drift") if long else None
     next_n = w["week"] + 1
+    nxt = next((x for x in weeks if x["week"] == next_n), None)
     rules = [
         (any(_in(d.isoformat(), w) for d in triggers),
          "Ankle first: stop any exercise that takes the ankle above 3 out of 10, and keep up the morning check."),
-        (w["target_km"] and w["actual_km"] < 0.6 * w["target_km"],
+        (bool(nxt and (nxt.get("guard") or {}).get("why") == "hold"),
          "Ease back in: the plan holds next week's volume, so just get the runs done."),
         (easy_pace is not None and easy_pace < s["paces"]["easy"] - EASY_QUICK,
          f"Keep easy runs at {_pace(s['paces']['easy'])}/km or slower: they averaged {_pace(easy_pace or 0)}/km."),
