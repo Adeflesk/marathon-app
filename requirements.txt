@@ -1,6 +1,9 @@
-fastapi>=0.110
-uvicorn[standard]>=0.27
-jinja2>=3.1
-httpx>=0.27
-python-multipart>=0.0.9
-fit-tool>=0.9
+# Pinned to the versions the tests run against, so a deploy can't pull in a breaking release.
+# To upgrade: bump here, pip install -r requirements-dev.txt, run pytest, then deploy.
+fastapi==0.143.3
+starlette==1.8.0
+uvicorn[standard]==0.54.0
+jinja2==3.1.6
+httpx==0.28.1
+python-multipart==0.0.32
+fit-tool==0.9.16

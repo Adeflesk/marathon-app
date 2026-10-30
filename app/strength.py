@@ -122,7 +122,7 @@ EXERCISES: dict[str, dict] = {
                        harder="bulgarian_split_squat"),
     "calf_raise_straight": _ex("Single-leg calf raise, straight knee",
                                "Ball of the foot on the box edge, dumbbell in the same-side hand, 3 s lowering. "
-                               "Bodyweight until 25 reps are possible.",
+                               "Pick the weight that leaves 3–4 reps in the tank; bodyweight is fine while that is enough.",
                                "dumbbell", ankle=True, per_side=True, harder="deficit_calf_raise"),
     "deficit_calf_raise": _ex("Single-leg deficit calf raise, straight knee",
                               "Ball of the foot on a plate on the box, heel drops well below it, dumbbell in the "
@@ -385,7 +385,7 @@ def _session(key: str, week: dict, eq: dict, ctx: dict, day) -> dict:
         "key": key,
         "name": "Strength A: heavy legs and hops" if key == "A" else "Strength B: light full body and ankle",
         "date": day, "day": day.strftime("%a"),
-        "minutes": 45 if key == "A" else (25 if phase == "Taper 2" else 35),
+        "minutes": 45 if key == "A" else (25 if phase == "Taper 2" else 40),
         "reduced": bool(trims), "note": note, "warmup": WARMUP[key], "exercises": exercises,
     }
 

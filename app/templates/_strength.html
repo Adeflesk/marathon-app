@@ -168,7 +168,7 @@ last time {% if lg.weight_kg is not none %}{{ kg(lg.weight_kg) }}{% else %}{{ re
 {% set other_side = "left" if injured_side == "right" else "right" %}
 <section class="tests stack" id="tests" aria-labelledby="tests-h">
   <h2 id="tests-h">Ankle tests this week</h2>
-  <p class="mute">About 15 minutes, warmed up, on a rest or easy day. The results decide when hops and harder balance work start. Save what you've done and come back for the rest.</p>
+  <p class="mute">About 15 minutes, warmed up, on a rest or easy day, never after a strength session: tired calves give a low count. Do the calf raise first, while fresh. The results decide when hops and harder balance work start. Save what you've done and come back for the rest.</p>
   <form method="post" action="/ankle/tests" class="stack">
     <input type="hidden" name="date" value="{{ date.isoformat() }}">
     {% for key, t in tests.items() %}
