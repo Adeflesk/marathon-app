@@ -54,6 +54,9 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
     prior/at that week: 0 for weeks 1–6, 1 for 7–10, 2 for 11–14, 3 from 15).
   - `feedback_factor()` turns a check-in into a 0.8/0.9/1.0 multiplier; the plan only ever adjusts
     down.
+  - `volume_caps()` is the missed-week guard: a week ≤ 1.15 × the best of the last 4 *known* weeks' actual
+    km, or ≤ 0.9 × it when the week before ran under 60% of its target; floor `base_weekly_km`, race week
+    untouched, only once the week before is known. Never bites on the plan as written (tested).
 - `app/sessions.py` — the Wednesday menu.
   - Sessions are lists of steps and `{"repeat": n, "steps": [...]}` blocks, with `pace` as a
     `settings.paces` key, a number in s/km, or `None` (an open target).
@@ -81,14 +84,19 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
 - `app/moves.py` — pure: applies the user's moved/skipped sessions to the generated plan. `shift()` marks an
   item (`orig_date`, then `moved_from` + new `date`, or `skipped`); `relocate()` puts items moved past Sunday
   into the next week; `clash()` holds the warning rules; `can_move()` stops at race day and the plan's end.
-- `app/main.py` — `build_view()` is the hub every page uses: generate plan → apply the *previous* week's
-  check-in factor → shift and relocate moved runs → join actual runs from SQLite by date (a day with two runs
+- `app/main.py` — `build_view()` is the hub every page uses: `apply_result()` (the latest logged result
+  sets `s["paces"]` and `s["result"]` via `pace_engine.from_result`) → generate plan → scale each week by the
+  smaller of the *previous* week's check-in factor and the missed-week guard (`volume_guard()`; known weeks
+  are over and covered by `meta.last_sync`; strength follows the check-in only) → shift and relocate moved runs → join actual runs from SQLite by date (a day with two runs
   shares its actual; the longer run gets the review) → compute ankle context and attach strength sessions
   (shifted before logs are looked up), suggestions, and snacks → relocate strength → mark `movable`.
   Routes: `/`, `/plan`, `/strength`, `/equipment` (GET/POST), `/workout/{date}.fit?n=`,
   `/workouts/week/{n}.zip`, `/sync`, `/checkin`, `/strength/log` (POST), `/snack` (POST), `/ankle/check` (POST),
-  `/ankle/tests` (POST), `/move` (POST; warns via `/?confirm=…` on a clash), `/move/undo` (POST).
+  `/ankle/tests` (POST), `/result` and `/result/delete` (POST), `/move` (POST; warns via `/?confirm=…` on a clash), `/move/undo` (POST).
   POSTs redirect with a 303 to their anchor.
+- `app/pace_engine.py` — pace maths. `from_result()` turns a result into paces and a goal verdict: easy,
+  long, threshold and interval from fitness; marathon stays the settings' goal pace unless within 10 s/km of
+  threshold or the goal is >5% off; sub-threshold MP − 9, never quicker than threshold.
 - `app/garmin.py` — builds FIT workout files with `fit-tool`; pace targets are speed ranges (m/s) around
   `settings.paces`. Repeat blocks become a `REPEAT_UNTIL_STEPS_CMPLT` step after their steps, pointing back
   to the block's first step index, mirroring Garmin Connect's own files (samples in `samples/garmin/`,
@@ -108,7 +116,8 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
 - `app/db.py` — tables: `activities` (synced runs), `run_details` (JSON km splits and laps per run),
   `checkins` (keyed by week number), `strength_logs` (logged sets, weight, reps, rating, ankle pain),
   `snack_logs` (daily ankle snack ticks), `ankle_tests` (readiness test values), `ankle_checks` (morning ankle checks),
-  and `moves` (a session's original date + `run`/`A`/`B` → new date, or NULL when skipped).
+  `moves` (a session's original date + `run`/`A`/`B` → new date, or NULL when skipped), `results` (races and
+  time trials: date, km, seconds) and `meta` (key/value; `last_sync` is written by a successful sync).
   Schema is `CREATE IF NOT EXISTS` on startup; there are no migrations. `DB_PATH` env var overrides `data/marathon.db`.
 
 ## Conventions

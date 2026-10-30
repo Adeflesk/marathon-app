@@ -49,6 +49,35 @@ def paces_from_race(time_s: float, dist_km: float) -> dict:
     }
 
 
+GOAL_SLACK = 1.05  # a prediction up to 5% slower than the goal still counts as within reach
+MP_GAP = 10  # marathon pace at least this many s/km slower than threshold, or MP work is threshold work
+
+
+def from_result(paces: dict, goal_s: float, km: float, seconds: float) -> dict:
+    """Paces from a race or time trial, and an honest read of the goal.
+
+    Easy, long and threshold come from paces_from_race; interval is the result's predicted 5 km pace.
+    Marathon pace ("mp_source"): the goal pace, unless that's within MP_GAP of today's threshold pace
+    ("threshold": MP_GAP slower than threshold for now), or the goal is out of reach ("result": the predicted
+    pace). Sub-threshold sits MP - 9 s, never quicker than threshold.
+    """
+    predicted = riegel(seconds, km) * 1.02
+    fit = paces_from_race(seconds, km)
+    out = {**paces, "easy": fit["easy"], "long": fit["long"], "tempo": fit["tempo"],
+           "interval": round(riegel(seconds, km, 5) / 5)}
+    ratio = predicted / goal_s
+    verdict = "on track" if ratio <= 1 else "within reach" if ratio <= GOAL_SLACK else "ambitious"
+    goal_mp = paces["marathon"]  # the settings' marathon pace is the goal pace
+    if verdict == "ambitious":
+        out["marathon"], source = fit["marathon"], "result"
+    elif goal_mp < fit["tempo"] + MP_GAP:
+        out["marathon"], source = fit["tempo"] + MP_GAP, "threshold"
+    else:
+        out["marathon"], source = goal_mp, "goal"
+    out["subthreshold"] = max(out["marathon"] - 9, out["tempo"])
+    return {"paces": out, "predicted": predicted, "verdict": verdict, "mp_source": source}
+
+
 if __name__ == "__main__":
     # python -m app.pace_engine 10 52:30   (10 km in 52:30)
     if len(sys.argv) != 3:

@@ -84,6 +84,15 @@ def init() -> None:
                 worse INTEGER NOT NULL,
                 note TEXT DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS results (
+                date TEXT PRIMARY KEY,
+                km REAL NOT NULL,
+                seconds INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
             CREATE TABLE IF NOT EXISTS moves (
                 date TEXT NOT NULL,
                 session TEXT NOT NULL,
@@ -174,3 +183,30 @@ def delete_move(day: str, session: str) -> None:
 def moves() -> list[dict]:
     with conn() as c:
         return [dict(r) for r in c.execute("SELECT * FROM moves ORDER BY date, session")]
+
+
+def save_result(day: str, km: float, seconds: int) -> None:
+    """A race or time trial; one per day."""
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO results (date, km, seconds) VALUES (?,?,?)", (day, km, seconds))
+
+
+def delete_result(day: str) -> None:
+    with conn() as c:
+        c.execute("DELETE FROM results WHERE date = ?", (day,))
+
+
+def results() -> list[dict]:
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM results ORDER BY date")]
+
+
+def set_meta(key: str, value: str) -> None:
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?,?)", (key, value))
+
+
+def get_meta(key: str) -> str | None:
+    with conn() as c:
+        row = c.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None

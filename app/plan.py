@@ -253,3 +253,36 @@ def feedback_factor(prev_checkin: dict | None) -> float:
     if pain >= 3 or feel <= 2:
         return 0.9
     return 1.0
+
+
+RAMP = 1.15  # a week may be at most this much above the best of the last few weeks actually run
+HOLD = 0.9  # after a low week, at most this share of that best week
+LOW = 0.6  # a week under this share of its target counts as low
+WINDOW = 4  # completed weeks looked back on
+
+
+def volume_caps(weeks: list[dict], actual: dict[int, float], known: set[int], base: float) -> dict[int, dict]:
+    """Missed-week guard: {week: {"km", "why", "best", "last"}} for weeks capped below their planned km.
+
+    weeks: [{"week", "phase", "km"}] in order, km as planned (after the check-in). actual: km run per plan
+    week. known: weeks that are over and synced since, the only ones that count; a week is capped only
+    once the week before it is known. A week may not exceed
+    RAMP × the best of the last WINDOW known weeks, nor HOLD × it when the week before reached under LOW of
+    its target; never below `base`, never raising a week, and race week is left alone.
+    """
+    caps: dict[int, dict] = {}
+    final: dict[int, float] = {}  # each week's km after its own cap, for the next week's low-week test
+    for w in weeks:
+        n, km = w["week"], w["km"]
+        window = [actual.get(i, 0.0) for i in range(max(1, n - WINDOW), n) if i in known]
+        cap = None
+        prev = n - 1
+        if prev in known and w["phase"] != "Race week":  # nothing to go on until last week is known
+            best = max(window)
+            low = bool(final.get(prev)) and actual.get(prev, 0.0) < LOW * final[prev]
+            why, cap = ("hold", HOLD * best) if low else ("ramp", RAMP * best)
+            cap = max(cap, base)
+            if cap < km:
+                caps[n] = {"km": cap, "why": why, "best": best, "last": (actual.get(prev, 0.0), final.get(prev))}
+        final[n] = min(km, cap) if cap is not None else km
+    return caps

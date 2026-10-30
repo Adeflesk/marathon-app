@@ -62,11 +62,15 @@ in `app/config.py`):
 ```
 
 Paces are seconds per km. `tempo` is threshold pace, `subthreshold` is just quicker than marathon pace
-(about MP - 9 s) and `interval` is about 5 km race pace. After a 5K or 10K time trial, work out new ones with:
+(about MP - 9 s) and `interval` is about 5 km race pace. `marathon` is your goal pace.
 
-```
-python -m app.pace_engine 10 52:30
-```
+**After a race or time trial,** log it under "Your paces" on This week (5 km, 10 km or a half marathon). The
+latest result sets easy, long, threshold and interval pace for the whole plan and the watch files, and says
+how the goal looks: on track, within reach (up to 5% off) or ambitious. Marathon pace stays at goal pace
+unless that's within 10 s/km of your threshold pace (then it sits 10 s slower than threshold for now, so
+marathon-pace work doesn't turn into threshold work), or the goal is out of reach (then it's your predicted
+pace). A parkrun or a solo 5 km in the week 7 cutback is ideal. Delete a mis-entered result to go back.
+To try numbers without saving them: `python -m app.pace_engine 10 52:30`.
 
 ## Strength & Ankle
 
@@ -127,7 +131,7 @@ step. Before any run, a couple of minutes of calf raises and ankle circles at th
 2. Copy them into the watch's `GARMIN/NewFiles` folder (if they don't show up, try `GARMIN/Workouts`).
 3. Eject, then on the watch go to Training, Workouts and pick the session.
 
-Pace ranges are set from `settings.json`, so update your paces there first. The files have been tried on a
+Pace ranges follow your paces (your latest logged result, else `settings.json`). The files have been tried on a
 real Garmin watch and load as workouts.
 
 ## How the plan works
@@ -162,5 +166,10 @@ The shape follows what coaches and the research agree on. The full write-up is i
 - **Check-in:** the weekly check-in (feel 1-5, ankle pain 0-10) trims the following week by 10% or
   20% when it's a rough one. Sessions lose reps (never below 2) or get shorter reps. The plan only ever
   adjusts down.
+- **Missed running:** a week can't be more than 15% above the best of your last four weeks actually run. If a
+  week fell under 60% of its target (ill, travelling), the next one is held at 90% of that best week, then
+  climbs back to the plan over two or three weeks. Never below 25 km, never on race week. It only counts
+  weeks a Smashrun sync has covered (a sync on or after the Sunday), so a sync gap can't shrink the plan. The
+  week says when it's been held; strength isn't trimmed by it. Following the plan, it never kicks in.
 
 This is a draft shape, not coaching. Stop if the ankle hurts, and see a physio if it keeps happening.

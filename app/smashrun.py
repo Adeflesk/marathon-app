@@ -111,4 +111,5 @@ def sync(since: date) -> int:
         _fetch_details(client, headers, ids)
     if skipped and not saved:
         raise SyncError(f"Skipped {skipped} runs with no activityId. Fields Smashrun sent: {', '.join(sample_keys[:20])}")
+    db.set_meta("last_sync", datetime.now().isoformat(timespec="seconds"))  # weeks before this are known
     return saved

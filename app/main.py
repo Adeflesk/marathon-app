@@ -13,8 +13,8 @@ from fastapi.templating import Jinja2Templates
 
 from . import ankle, db, garmin, moves, progression, review, smashrun, strength
 from .config import load_settings, race_date
-from .pace_engine import fmt_pace, fmt_time, pace_per_mi
-from .plan import DAYS, _half, feedback_factor, generate
+from .pace_engine import fmt_pace, fmt_time, from_result, pace_per_mi, parse_time
+from .plan import DAYS, _half, feedback_factor, generate, volume_caps
 from .sessions import flatten, pace_s, scale_session, step_km
 
 BASE = Path(__file__).resolve().parent
@@ -77,6 +77,9 @@ def fmt_km(km: float) -> str:
 templates.env.filters["pace"] = fmt_pace
 templates.env.filters["pace_mi"] = lambda s: fmt_pace(pace_per_mi(s))
 templates.env.filters["km"] = fmt_km
+templates.env.filters["hms"] = fmt_time
+templates.env.filters["clock"] = lambda s: fmt_time(s)[2:] if s < 3600 else fmt_time(s)  # 25:30, 1:55:10
+templates.env.filters["longdate"] = lambda d: date.fromisoformat(d).strftime("%-d %b")
 templates.env.globals["band"] = band_segments
 
 
@@ -98,28 +101,66 @@ def actual_by_date() -> dict[str, dict]:
     return out
 
 
+def apply_result(s: dict, t: date) -> None:
+    """The latest race or time trial on or before `t` sets the paces, with a read of the goal."""
+    latest = next((r for r in reversed(db.results()) if r["date"] <= t.isoformat()), None)
+    if latest:
+        read = from_result(s["paces"], parse_time(s["goal_time"]), latest["km"], latest["seconds"])
+        s["paces"] = read["paces"]
+        s["result"] = {**latest, **read}
+
+
+def volume_guard(weeks: list[dict], actual: dict, checkins: dict, t: date, base: float) -> dict[int, dict]:
+    """plan.volume_caps from the stored facts: km run per plan week, and which weeks a sync has covered."""
+    last = db.get_meta("last_sync")
+    synced = date.fromisoformat(last[:10]) if last else None
+    run = {w["week"]: 0.0 for w in weeks}
+    starts = {w["start"]: w["week"] for w in weeks}
+    for d, a in actual.items():
+        day = date.fromisoformat(d)
+        monday = day - timedelta(days=day.weekday())
+        if monday in starts:
+            run[starts[monday]] += a["km"]
+    # A week counts once it's over and a sync ran on or after its Sunday (usually after the long run; a sync
+    # before it makes the week look short until the next sync puts it right).
+    known = {w["week"] for w in weeks
+             if synced and w["start"] + timedelta(days=6) < t and w["start"] + timedelta(days=6) <= synced}
+    planned = [{"week": w["week"], "phase": w["phase"],
+                "km": w["target_km"] * feedback_factor(checkins.get(w["week"] - 1))} for w in weeks]
+    return volume_caps(planned, run, known, base)
+
+
 def build_view():
     s = load_settings()
-    weeks = generate(s, today())
+    t = today()
+    apply_result(s, t)
+    weeks = generate(s, t)
     actual = actual_by_date()
     details = db.run_details([a["main"]["id"] for a in actual.values()])
     eq = strength.load_equipment()
     with db.conn() as c:
         checkins = {r["week"]: dict(r) for r in c.execute("SELECT * FROM checkins")}
-    t = today()
     st = ankle_state(t, weeks, list(checkins.values()))
     moved = moves.index(db.moves())
-    # Each run is scaled by its own week's check-in, then follows any move (relocate takes it across Sunday).
+    caps = volume_guard(weeks, actual, checkins, t, s["base_weekly_km"])
+    # Each run is scaled by its own week's check-in or the missed-week guard (the smaller wins), then follows
+    # any move (relocate takes it across Sunday). Strength follows the check-in only.
     for w in weeks:
         factor = feedback_factor(checkins.get(w["week"] - 1))
         w["factor"] = factor
         w["checkin"] = checkins.get(w["week"])
+        cap = caps.get(w["week"])
+        run_factor = factor
+        w["guard"] = None
+        if cap and w["target_km"] and cap["km"] / w["target_km"] < factor:
+            run_factor = cap["km"] / w["target_km"]
+            w["guard"] = {**cap, "planned": w["target_km"]}
         for wo in w["workouts"]:
-            if factor != 1.0 and wo["type"] != "race":
+            if run_factor != 1.0 and wo["type"] != "race":
                 if "steps" in wo:  # fewer reps, so the day, the note and the .fit all agree
-                    scale_session(wo, factor, s["paces"])
+                    scale_session(wo, run_factor, s["paces"])
                 else:
-                    wo["km"] = _half(wo["km"] * factor)
+                    wo["km"] = _half(wo["km"] * run_factor)
             moves.shift(wo, "run", moved)
     moves.relocate(weeks)
     # A day with two runs (after a move) is one day: both show its actual, the longer one gets the review.
@@ -555,6 +596,35 @@ async def ankle_tests(request: Request):
     for key, injured, other in rows:
         db.save_test(d.isoformat(), key, injured, other)
     return _back("tests")
+
+
+RESULT_KM = {"5": 5.0, "10": 10.0, "21.1": 21.0975}
+
+
+@app.post("/result")
+def result_save(day: str = Form("", alias="date"), km: str = Form(""), time: str = Form("")):
+    d = _day(day)
+    if d is None or d > today():
+        return _back("paces", "Not saved: pick the day of the race, today or earlier.")
+    if km not in RESULT_KM:
+        return _back("paces", "Not saved: pick 5 km, 10 km or a half marathon.")
+    try:
+        seconds = parse_time(time.strip())
+    except ValueError:
+        seconds = 0
+    pace = seconds / RESULT_KM[km]
+    if not 150 <= pace <= 720:  # 2:30 to 12:00 per km
+        return _back("paces", "Not saved: write the time as mm:ss or h:mm:ss.")
+    db.save_result(d.isoformat(), RESULT_KM[km], seconds)
+    return _back("paces", "Result saved. Your paces and the plan now follow it.")
+
+
+@app.post("/result/delete")
+def result_delete(day: str = Form("", alias="date")):
+    d = _day(day)
+    if d is not None:
+        db.delete_result(d.isoformat())
+    return _back("paces", "Result deleted.")
 
 
 SESSIONS = {"run", "A", "B"}
