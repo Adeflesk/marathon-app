@@ -6,6 +6,8 @@ settings with the goal and the latest result). Nothing here is stored; like the 
 from datetime import date, timedelta
 from statistics import median
 
+from . import ankle
+
 PACE_BAND = 15  # s/km either side of the reference pace for a split to count
 MIN_SPLITS = 3  # fewer than this in a week is a gap, not a guess
 DRIFT_WARN, DRIFT_BAD = 5, 10
@@ -180,3 +182,86 @@ def ankle_table(weeks: list[dict], tests: list[dict]) -> dict:
             cells.append({"value": value, "met": met(value)})
         rows.append({"name": name, "target": target, "cells": cells})
     return {"columns": columns, "rows": rows}
+
+
+# --- weekly summaries ---
+
+EASY_QUICK = 10  # easy runs this much quicker than easy pace, on average, get the easy-pace focus
+SNACK_DAYS = 4
+TYPE_NAMES = {"strides": "Strides", "fartlek": "Fartlek", "threshold": "Threshold session",
+              "strength": "Strength session", "specific": "Marathon-pace session", "mp": "Marathon-pace session"}
+
+
+def _pace(sec: float) -> str:
+    s = int(round(sec))
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def _in(day: str, w: dict) -> bool:
+    return w["start"] <= date.fromisoformat(day) <= w["start"] + timedelta(days=6)
+
+
+def _summary(w: dict, weeks: list[dict], s: dict, st: dict, results: list[dict]) -> dict:
+    runs = [wo for wo in w["workouts"] if not wo.get("skipped") and wo["km"] > 0]
+    ran = [wo for wo in runs if wo.get("actual_km") is not None]
+    sentences = [f"Ran {w['actual_km']:g} of {w['target_km']:g} km: {len(ran)} of {len(runs)} runs."]
+    for wo in runs:
+        r = wo.get("review")
+        if r and r.get("headline"):
+            if wo["type"] == "long":
+                sentences.append(f"Long run: {r['headline']}")
+            elif "steps" in wo:
+                sentences.append(f"{TYPE_NAMES.get(wo['type'], 'Session')}: {r['headline']}")
+
+    sessions = [x for x in w.get("strength", []) if not x.get("skipped")]
+    pains = [ex["log"]["ankle_pain"] for x in sessions for ex in x["exercises"]
+             if ex.get("log") and ex["log"].get("ankle_pain") is not None]
+    done = sum(1 for x in sessions if x["done"])
+    text = f"Strength: {done} of {len(sessions)} sessions"
+    sentences.append(text + (f", ankle pain {min(pains)}–{max(pains)}." if pains else "."))
+
+    snack_days = len({x["date"] for x in st["snacks"] if _in(x["date"], w)})
+    worse = [c for c in st["checks"] if c.get("worse") and _in(c["date"], w)]
+    sentences.append(f"Ankle snacks on {snack_days} days" +
+                     (f"; morning check worse on {len(worse)} day{'s' if len(worse) > 1 else ''}." if worse else "."))
+    ci = w.get("checkin")
+    sentences.append(f"Check-in: feel {ci['feel']}, ankle pain {ci['pain']}." if ci else "No check-in.")
+    for r in results:
+        if _in(r["date"], w):
+            sentences.append(f"Logged a {r['km']:g} km in {_pace(r['seconds']) if r['seconds'] < 3600 else _hms(r['seconds'])}.")
+    for g in s.get("goal_changes", []):
+        if _in(g["date"], w):
+            sentences.append(f"Goal changed from {g['from']} to {g['to']}.")
+    if w.get("guard"):
+        sentences.append(f"Held at {w['target_km']:g} km after missed running.")
+
+    # "Next week": the first rule that applies
+    triggers = ankle._triggers(st["checks"], st["logs"], st["checkins"], weeks)
+    easy = [wo for wo in ran if wo["type"] == "easy" and wo.get("actual_pace")]
+    easy_km = sum(wo["actual_km"] for wo in easy)
+    easy_pace = sum(wo["actual_pace"] * wo["actual_km"] for wo in easy) / easy_km if easy_km else None
+    long = next((wo for wo in ran if wo["type"] == "long"), None)
+    drift = (long.get("review") or {}).get("drift") if long else None
+    next_n = w["week"] + 1
+    rules = [
+        (any(_in(d.isoformat(), w) for d in triggers),
+         "Ankle first: stop any exercise that takes the ankle above 3 out of 10, and keep up the morning check."),
+        (w["target_km"] and w["actual_km"] < 0.6 * w["target_km"],
+         "Ease back in: the plan holds next week's volume, so just get the runs done."),
+        (easy_pace is not None and easy_pace < s["paces"]["easy"] - EASY_QUICK,
+         f"Keep easy runs at {_pace(s['paces']['easy'])}/km or slower: they averaged {_pace(easy_pace or 0)}/km."),
+        (drift is not None and drift >= DRIFT_WARN,
+         f"Start the long run slower: heart rate drifted {drift}%."),
+        (snack_days < SNACK_DAYS, f"Tick {SNACK_DAYS} snack days next week: {snack_days} this week."),
+        (done < len(sessions), "Fit both strength sessions in: use Move to tomorrow if a day goes wrong."),
+        (next_n in ankle.test_weeks(weeks),
+         "Test week next: do the ankle tests on a non-strength day, calf raise first."),
+    ]
+    focus = next((text for hit, text in rules if hit), "Keep doing what you're doing.")
+    return {"week": w["week"], "start": w["start"], "end": w["start"] + timedelta(days=6),
+            "planned": w["target_km"], "done": w["actual_km"], "sentences": sentences, "next": focus}
+
+
+def summaries(weeks: list[dict], s: dict, st: dict, results: list[dict], t: date) -> list[dict]:
+    """One per completed plan week, newest first."""
+    return [_summary(w, weeks, s, st, results) for w in reversed(weeks) if w["start"] + timedelta(days=6) < t]
