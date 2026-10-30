@@ -78,7 +78,7 @@ python -m app.pace_engine 10 52:30
   - **Thursday A** (heavy legs and hops, ~45 min): hops (once unlocked), barbell box squat, Romanian deadlift,
     the block's single-leg lift (step-ups in block 0, reverse lunges in block 1, Bulgarian split squats from block 2),
     straight calf raise, seated soleus raise, and barbell hip thrust.
-  - **Tuesday B** (light full body and ankle, ~35 min): ankle balance block, dumbbell single-leg RDL, ring row +
+  - **Tuesday B** (light full body and ankle, ~40 min): ankle balance block, dumbbell single-leg RDL, ring row +
     push-up, suitcase carry + core (Pallof press, dead bug, or side plank), Copenhagen plank, bent calf raise +
     band eversion. The Copenhagen plank works the inner thigh (groin), which the rest of the routine misses. It
     starts with the knee on the bench (short lever) and moves to the foot on the bench from week 7; holds grow

@@ -7,3 +7,10 @@ __pycache__/
 .DS_Store
 Dockerfile
 fly.toml
+# personal documents and notes; the app doesn't read them
+docs/
+research_notes/
+reports/
+samples/
+tests/
+PROJECT_REVIEW.md
