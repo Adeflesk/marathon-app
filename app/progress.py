@@ -48,7 +48,8 @@ def long_runs(weeks: list[dict]) -> list[dict]:
             if wo["type"] == "long" and wo.get("actual_km") is not None and not wo.get("skipped"):
                 drift = (wo.get("review") or {}).get("drift")
                 out.append({"week": w["week"], "date": wo["date"], "km": wo["actual_km"], "drift": drift,
-                            "mp": bool(wo.get("mp_km")), "colour": _colour(drift)})
+                            "mp": bool(wo.get("mp_km")), "colour": _colour(drift),
+                            "fuel": bool(wo.get("fuel")), "fuelled": bool(wo.get("fuelled"))})
     return out
 
 
@@ -225,6 +226,9 @@ def _summary(w: dict, weeks: list[dict], s: dict, st: dict, results: list[dict])
             elif "steps" in wo:
                 sentences.append(f"{TYPE_NAMES.get(wo['type'], 'Session')}: {r['headline']}")
 
+    for wo in ran:
+        if wo["type"] == "long" and wo.get("fuel"):
+            sentences.append("Fuelled as planned." if wo.get("fuelled") else "No fuel logged on the long run.")
     sessions = [x for x in w.get("strength", []) if not x.get("skipped")]
     pains = [ex["log"]["ankle_pain"] for x in sessions for ex in x["exercises"]
              if ex.get("log") and ex["log"].get("ankle_pain") is not None]

@@ -284,7 +284,11 @@
         </small>
       </span>
       {% if w.review %}<span class="verdict v-{{ w.review.verdict }}">{{ w.review.headline }}</span>{% endif %}
-      {% if w.fuel and not w.skipped %}<span class="fuel small mute">{{ w.fuel }}</span>{% endif %}
+      {% if w.fuel and not w.skipped %}<span class="fuel small mute">{{ w.fuel }}
+        {%- if w.actual_km is not none %}
+        <form method="post" action="/fuel" class="inline"><input type="hidden" name="date" value="{{ w.date.isoformat() }}">
+          <button type="submit" class="linkish">{{ 'Fuelled ✓ (undo)' if w.fuelled else 'Fuelled as planned' }}</button></form>
+        {%- endif %}</span>{% endif %}
       {% if w.skipped or w.moved_from or w.movable %}
       <span class="moves">{{ ui.moved_note(w, "run") }}{% if w.movable %}{{ ui.move_form(w, "run") }}{% endif %}</span>
       {% endif %}

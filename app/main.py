@@ -223,7 +223,10 @@ def build_view():
         w["is_past"] = w["start"] + timedelta(days=7) <= t
     moves.relocate(weeks)  # strength sessions moved across Sunday, keeping their own week's prescription
     race = race_date(s)
+    ticks = db.fuel_days()
     for w in weeks:
+        for wo in w["workouts"]:
+            wo["fuelled"] = bool(wo["fuel"]) and wo["date"].isoformat() in ticks
         for kind, item in [("run", wo) for wo in w["workouts"]] + [(x["key"], x) for x in w.get("strength", [])]:
             item["done"] = (item.get("actual_km") is not None if kind == "run"
                             else any(ex.get("log") for ex in item.get("exercises", [])))
@@ -672,6 +675,20 @@ def goal_change(goal: str = Form("")):
     db.save_goal(today().isoformat(), GOAL_SETTINGS if back else fmt_time(seconds))
     msg = f"Goal changed to {fmt_time(seconds)[:-3]}. The plan now follows it."
     return RedirectResponse(f"/progress?{urlencode({'msg': msg})}#verdict", status_code=303)
+
+
+@app.post("/fuel")
+def fuel_tick(day: str = Form("", alias="date")):
+    """Tick or untick "fuelled as planned" on a done long run that had a fuelling note."""
+    d = _day(day)
+    if d is None or d > today():
+        return _back("week", "Not saved: that isn't a day with a long run done.")
+    _, weeks = build_view()
+    if not any(wo["date"] == d and wo["fuel"] and wo["actual_km"] is not None and not wo.get("skipped")
+               for w in weeks for wo in w["workouts"]):
+        return _back("week", "Not saved: that isn't a day with a long run done.")
+    db.toggle_fuel(d.isoformat())
+    return _back("week")
 
 
 RESULT_KM = {"5": 5.0, "10": 10.0, "21.1": 21.0975}
