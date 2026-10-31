@@ -51,6 +51,10 @@ DEFAULTS = {
     # Days for the ankle routine, and which ankle is injured.
     "ankle_days": ["mon", "wed", "fri", "sat"],
     "injured_side": "right",
+    # Race drinks stations (water and sports drink) and those with gels, in km. From recent editions of the
+    # Barcelona course; check the 2027 course guide.
+    "race_stations": [5, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30, 32.5, 35, 37.5, 40],
+    "race_gel_stations": [15, 20, 25, 30, 35, 37.5],
 }
 
 
