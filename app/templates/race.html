@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Race day{% endblock %}
+{% macro clock(sec) %}{% set t = sec|round|int %}{{ t // 3600 }}:{{ '%02d'|format((t % 3600) // 60) }}:{{ '%02d'|format(t % 60) }}{% endmacro %}
+{% block head %}
+<style>
+  .race { padding-top: 20px; }
+  .race h1 { font-size: clamp(2rem, 9vw, 2.75rem); line-height: 1.05; }
+  table.race-t { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  table.race-t th, table.race-t td { padding: 7px 4px; border-bottom: 1px solid var(--line); text-align: left; }
+  table.race-t td.num, table.race-t th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .carry { font-weight: 650; }
+  ul.tips { padding-left: 1.2em; }
+  ul.tips li { margin: 6px 0; }
+</style>
+{% endblock %}
+{% block body %}
+<section class="race stack">
+  <p class="mute">{{ s.race_name }}, {{ race_day.strftime('%A %-d %B %Y') }}</p>
+  <h1>Finish in {{ clock(plan.finish) }}</h1>
+  <p>Goal {{ goal[:-3] if goal.endswith(':00') else goal }}. Marathon pace {{ s.paces.marathon|pace }}/km: the first 5 km at <strong>{{ plan.first_pace|pace }}/km</strong> to settle in, then <strong>{{ plan.rest_pace|pace }}/km</strong>.</p>
+</section>
+
+<section aria-labelledby="splits-h" style="margin-top:24px">
+  <h2 id="splits-h">Splits</h2>
+  <table class="race-t">
+    <tr><th>Where</th><th class="num">Clock</th></tr>
+    {% for x in plan.splits %}<tr><td>{{ x.label }}</td><td class="num">{{ clock(x.clock) }}</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section aria-labelledby="gels-h" style="margin-top:24px">
+  <h2 id="gels-h">Fuelling</h2>
+  <p class="mute">A Finisher gel about every 35 minutes from 45, as in your long runs; on the course, at the gel station nearest that time. Water at every station; the sports drink at every other one, or as you like.</p>
+  <table class="race-t">
+    <tr><th>Gel</th><th class="num">Time</th><th class="num">About</th><th>From</th></tr>
+    {% for g in plan.gels %}
+    <tr><td>{{ loop.index }}</td><td class="num">{{ g.time|round|int }} min</td><td class="num">km {{ g.km|km }}</td>
+      <td>{% if g.where == 'carry' %}<span class="carry">Carry</span>{% else %}Course, km {{ g.station|km }}{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% set carried = plan.gels|selectattr('where', 'equalto', 'carry')|list|length %}
+  <p style="margin-top:10px"><strong>Carry {{ carried }} gel{{ 's' if carried != 1 }}</strong>{% if carried %}, plus one spare{% endif %}.
+    {%- if plan.gel_stations %} Course gels: km {{ plan.gel_stations|map('km')|join(', ') }}.{% endif %}
+    {%- if plan.stations %} Drinks stations: km {{ plan.stations|map('km')|join(', ') }}.{% endif %}</p>
+  <p class="mute small">From recent editions: check the 2027 course guide before race day and adjust if the stations move.</p>
+</section>
+
+<section aria-labelledby="tips-h" style="margin-top:24px">
+  <h2 id="tips-h">On the day</h2>
+  <ul class="tips">
+    <li><strong>Nothing new on race day:</strong> the same shoes, kit, breakfast and gels you used on your long runs.</li>
+    <li>Breakfast about three hours before the start; a gel or a few sips of sports drink 15 minutes before.</li>
+    <li>Start in your pen for your finish time and let the first 5 km feel easy. The race starts at 30 km.</li>
+    <li>Take carried gels just before a station, then wash them down with its water; take course gels at the station, with its water.</li>
+  </ul>
+</section>
+{% endblock %}

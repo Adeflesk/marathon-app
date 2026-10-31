@@ -95,6 +95,10 @@ def init() -> None:
                 goal_time TEXT NOT NULL,
                 created TEXT
             );
+            CREATE TABLE IF NOT EXISTS fuel_logs (
+                date TEXT PRIMARY KEY,
+                created TEXT
+            );
             CREATE TABLE IF NOT EXISTS meta (
                 key TEXT PRIMARY KEY,
                 value TEXT
@@ -228,3 +232,16 @@ def save_goal(day: str, goal_time: str) -> None:
 def goals() -> list[dict]:
     with conn() as c:
         return [dict(r) for r in c.execute("SELECT * FROM goals ORDER BY id")]
+
+
+def toggle_fuel(day: str) -> None:
+    """Tick (or untick) "fuelled as planned" for the long run on `day`."""
+    with conn() as c:
+        if c.execute("DELETE FROM fuel_logs WHERE date = ?", (day,)).rowcount == 0:
+            c.execute("INSERT INTO fuel_logs (date, created) VALUES (?,?)",
+                      (day, datetime.now().isoformat(timespec="seconds")))
+
+
+def fuel_days() -> set[str]:
+    with conn() as c:
+        return {r["date"] for r in c.execute("SELECT date FROM fuel_logs")}

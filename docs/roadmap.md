@@ -31,10 +31,10 @@ Today the plan adjusts only from the weekly check-in, and only downwards.
 
 Needed from about week 8 (long runs of 90 minutes and more).
 
-- [ ] **Fuelling notes** on long runs, e.g. "a gel every 30–40 min from 45 min".
-- [ ] **Log how the stomach coped** with the fuel.
-- [ ] **MP finishes checked while fuelling.**
-- [ ] **Race-day plan:** pacing and fuelling for Barcelona in the last weeks.
+- [x] **Fuelling notes** on long runs, e.g. "a gel every 30–40 min from 45 min".
+- [x] **Log how the stomach coped** with the fuel. (Replaced by a single "Fuelled as planned" tick: the stomach is strong.)
+- [x] **MP finishes checked while fuelling.**
+- [x] **Race-day plan:** pacing and fuelling for Barcelona in the last weeks.
 
 ## 4. Less admin
 

@@ -115,6 +115,8 @@
     <text x="20" y="97">{{ long_runs[0].km|km }} km</text>
     <text x="320" y="97" text-anchor="end">{{ long_runs[-1].km|km }} km</text>
   </svg>
+  {% set practised = long_runs|selectattr('fuel')|list %}
+  {% if practised %}<p class="small" style="margin-top:8px">Fuel practice: {{ practised|selectattr('fuelled')|list|length }} of {{ practised|length }} long runs fuelled as planned.</p>{% endif %}
   {% else %}<p class="mute small">No long runs synced yet.</p>{% endif %}
 </section>
 

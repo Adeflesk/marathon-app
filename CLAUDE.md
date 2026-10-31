@@ -91,7 +91,7 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   are over and covered by `meta.last_sync`, marked `w["synced"]`; strength follows the check-in only) → shift and relocate moved runs → join actual runs from SQLite by date (a day with two runs
   shares its actual; the longer run gets the review) → compute ankle context and attach strength sessions
   (shifted before logs are looked up), suggestions, and snacks → relocate strength → mark `movable`.
-  Routes: `/`, `/plan`, `/progress`, `/goal` (POST), `/strength`, `/equipment` (GET/POST), `/workout/{date}.fit?n=`,
+  Routes: `/`, `/plan`, `/progress`, `/race`, `/goal` (POST), `/fuel` (POST, toggles the tick on a done long run with a note), `/strength`, `/equipment` (GET/POST), `/workout/{date}.fit?n=`,
   `/workouts/week/{n}.zip`, `/sync`, `/checkin`, `/strength/log` (POST), `/snack` (POST), `/ankle/check` (POST),
   `/ankle/tests` (POST), `/result` and `/result/delete` (POST), `/move` (POST; warns via `/?confirm=…` on a clash), `/move/undo` (POST).
   POSTs redirect with a 303 to their anchor.
@@ -104,6 +104,10 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   prediction, way back), `why_rows`, `ankle_table`, `summaries` (completed weeks; "Next week" = first rule
   that applies: ankle trigger, next week held, easy too quick, long-run drift, snacks < 4, strength missed,
   test week).
+- `app/fuel.py` — pure: `gel_minutes` (45, then every 35, none in the last 10; runs ≥ 90 min only),
+  `long_run_note(km, mp_km, long_pace)`, `race_plan(mp, stations, gel_stations)` (first 5 km MP + 5, the rest
+  quicker so the finish is MP × 42.195; gels before the first gel station carried, later ones at the last gel
+  station at or before their km). `build_view` sets `wo["fuel"]`, `wo["gels"]` and `wo["fuelled"]`.
 - `app/garmin.py` — builds FIT workout files with `fit-tool`; pace targets are speed ranges (m/s) around
   `settings.paces`. Repeat blocks become a `REPEAT_UNTIL_STEPS_CMPLT` step after their steps, pointing back
   to the block's first step index, mirroring Garmin Connect's own files (samples in `samples/garmin/`,
@@ -124,7 +128,7 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   `checkins` (keyed by week number), `strength_logs` (logged sets, weight, reps, rating, ankle pain),
   `snack_logs` (daily ankle snack ticks), `ankle_tests` (readiness test values), `ankle_checks` (morning ankle checks),
   `moves` (a session's original date + `run`/`A`/`B` → new date, or NULL when skipped), `results` (races and
-  time trials: date, km, seconds), `goals` (goal changes: date, goal_time; the latest wins) and `meta` (key/value; `last_sync` is written by a successful sync).
+  time trials: date, km, seconds), `goals` (goal changes: date, goal_time or "settings"; the latest wins), `fuel_logs` (date of a long run fuelled as planned) and `meta` (key/value; `last_sync` is written by a successful sync).
   Schema is `CREATE IF NOT EXISTS` on startup; there are no migrations. `DB_PATH` env var overrides `data/marathon.db`.
 
 ## Conventions
