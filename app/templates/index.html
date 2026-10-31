@@ -95,6 +95,8 @@
   details summary { cursor: pointer; font-weight: 600; }
   .splits td, .splits th { padding: 6px 8px 6px 0; }
   .days .verdict { grid-column: 2 / -1; font-size: .8125rem; color: var(--mute); }
+  .days .fuel { grid-column: 2 / -1; font-size: .8125rem; }
+  .hero .fuel { font-size: 1rem; border-left: 3px solid var(--steady); padding-left: 10px; }
   .days .verdict.v-warn, .days .verdict.v-bad { color: var(--warn); }
 
   .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -197,6 +199,7 @@
   {{ ui.band_bar(next_run, paces, "reveal") }}
   {{ ui.key_for(next_run, paces) }}
   <p class="note">{{ next_run.note }}</p>
+  {% if next_run.fuel %}<p class="fuel">{{ next_run.fuel }}</p>{% endif %}
   {% if next_run.actual_km is not none %}
   <p class="done-line">Done: {{ next_run.actual_km|km }} km at {{ next_run.actual_pace|pace }}/km{% if next_run.compliance is not none %}, {{ next_run.compliance }}% of plan{% endif %}.</p>
   {% endif %}
@@ -281,6 +284,7 @@
         </small>
       </span>
       {% if w.review %}<span class="verdict v-{{ w.review.verdict }}">{{ w.review.headline }}</span>{% endif %}
+      {% if w.fuel and not w.skipped %}<span class="fuel small mute">{{ w.fuel }}</span>{% endif %}
       {% if w.skipped or w.moved_from or w.movable %}
       <span class="moves">{{ ui.moved_note(w, "run") }}{% if w.movable %}{{ ui.move_form(w, "run") }}{% endif %}</span>
       {% endif %}

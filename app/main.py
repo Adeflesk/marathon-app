@@ -11,7 +11,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from . import ankle, db, garmin, moves, progress, progression, review, smashrun, strength
+from . import ankle, db, fuel, garmin, moves, progress, progression, review, smashrun, strength
 from .config import load_settings, race_date
 from .pace_engine import fmt_pace, fmt_time, from_result, pace_per_mi, parse_time
 from .plan import DAYS, _half, feedback_factor, generate, volume_caps
@@ -185,6 +185,10 @@ def build_view():
                     scale_session(wo, run_factor, s["paces"])
                 else:
                     wo["km"] = _half(wo["km"] * run_factor)
+            # fuel practice on long runs of 90 minutes or more, from the km left after any trim
+            wo["fuel"] = fuel.long_run_note(wo["km"], wo.get("mp_km", 0), s["paces"]["long"]) \
+                if wo["type"] == "long" else None
+            wo["gels"] = len(fuel.gel_minutes(wo["km"] * s["paces"]["long"] / 60)) if wo["fuel"] else 0
             moves.shift(wo, "run", moved)
     moves.relocate(weeks)
     # A day with two runs (after a move) is one day: both show its actual, the longer one gets the review.
