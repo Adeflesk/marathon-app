@@ -215,6 +215,13 @@
 
 {% if strength_session and not strength_hero %}{{ sx.strength_card(strength_session, today) }}{% endif %}
 {% for extra in strength_sessions[1:] %}{{ sx.strength_card(extra, today, false, "strength-" ~ extra.key) }}{% endfor %}
+{% if week and week.phase in ('Taper', 'Race week') %}
+<section class="stack" aria-labelledby="race-link-h">
+  <h2 id="race-link-h">Race day</h2>
+  <p class="mute">Your pacing and fuelling plan for {{ s.race_name }}: splits, which gels to carry and where to take the rest.</p>
+  <p><a class="button quiet" href="/race">Race day plan</a></p>
+</section>
+{% endif %}
 {% if last_summary %}{% set ls = last_summary %}
 <section class="stack summary-card" aria-labelledby="last-week-h">
   <h2 id="last-week-h">Last week, week {{ ls.week }}</h2>

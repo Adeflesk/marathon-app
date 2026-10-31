@@ -442,6 +442,14 @@ def progress_page(request: Request, msg: str = ""):
     })
 
 
+@app.get("/race")
+def race_page(request: Request):
+    s, weeks = build_view()
+    plan = fuel.race_plan(s["paces"]["marathon"], s["race_stations"], s["race_gel_stations"])
+    return templates.TemplateResponse(request, "race.html", {"s": s, "plan": plan, "race_day": race_date(s),
+                                                             "goal": s["goal_time"]})
+
+
 @app.get("/plan")
 def full_plan(request: Request):
     s, weeks = build_view()

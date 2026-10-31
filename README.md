@@ -51,6 +51,21 @@ Below: charts of fitness, long runs and km planned against done, the ankle tests
 a summary of every finished week with one focus for the next. Last week's summary also shows on This week
 on Monday and Tuesday. A week no sync has covered says so, since runs may be missing.
 
+## Fuelling and race day
+
+Long runs of 90 minutes or more (from week 5's 14 km) carry a fuel practice line: a Finisher gel at 45
+minutes, then every 35, none in the last 10 minutes, with water. Finisher is the Barcelona course's own gel,
+so race day holds no surprises. Marathon-pace finishes add: take the gel before the marathon-pace part and
+keep taking them at goal pace. After the run, tap **Fuelled as planned** in the week list; the weekly summary
+and Progress count your practice.
+
+From the first taper week, This week links the **Race day** page: your finish time at the marathon pace you
+train at (it follows your goal and latest result), the first 5 km 5 s/km easier and the rest a touch quicker,
+5 km splits with the clock, and each gel with where it comes from: carry the ones due before the first course
+gel station (about km 8 and 14 at 5:41/km), then take them from the course stations. The station kilometres
+are `race_stations` and `race_gel_stations` in `settings.json`, from recent editions: check the 2027 course
+guide and update them if they move.
+
 ## Days
 
 Runs are Monday (easy), Wednesday (the quality session), Saturday (easy) and Sunday (long); nothing on
