@@ -6,6 +6,7 @@ fuel. Finisher gels are the Barcelona course's own, so practice uses them too.
 MIN_RUN = 90  # minutes
 FIRST, EVERY, NOT_LAST = 45, 35, 10
 MARATHON = 42.195
+GAP_MIN, GAP_MAX = 25, 45  # minutes between gels on race day, wherever they come from
 EASY_START_KM, EASY_START_S = 5, 5  # the first 5 km 5 s/km easier, the rest a touch quicker
 
 
@@ -51,20 +52,24 @@ def race_plan(mp: int, stations: list[float], gel_stations: list[float]) -> dict
     marks = [(float(k), f"{k} km") for k in range(5, 45, 5) if k < MARATHON] + [(21.0975, "Half"), (MARATHON, "Finish")]
     splits = [{"km": k, "label": label, "clock": clock(k)} for k, label in sorted(marks)]
 
-    gels, used = [], set()
+    # Each gel is due on the long-run schedule. One due before the first course gel station is carried; later
+    # ones come from the course gel station reached nearest the time it's due, 25–45 minutes after the gel
+    # before. When no station fits, it's carried and taken on time. "time" is when it's actually taken.
+    stations, gel_stations = sorted(stations), sorted(gel_stations)
+    at = {st: clock(st) / 60 for st in gel_stations}
+    gels, used, last = [], set(), None
     for minute in gel_minutes(finish / 60):
-        km = km_at(minute * 60)
-        if not gel_stations or km < gel_stations[0]:
-            gels.append({"minute": minute, "km": km, "where": "carry", "station": None})
-            continue
-        before = [st for st in gel_stations if st <= km]
-        station = before[-1]
-        if station in used:  # taken already: the next free one
-            station = next((st for st in gel_stations if st > station and st not in used), None)
+        fits = [st for st in gel_stations if st not in used and at[st] >= minute - 20
+                and (last is None or last + GAP_MIN <= at[st] <= last + GAP_MAX)]
+        station = min(fits, key=lambda st: abs(at[st] - minute)) if fits and gel_stations and \
+            minute >= at[gel_stations[0]] - 5 else None
         if station is None:
-            gels.append({"minute": minute, "km": km, "where": "carry", "station": None})
-            continue
-        used.add(station)
-        gels.append({"minute": minute, "km": km, "where": "course", "station": station})
+            t = minute if last is None else max(minute, last + GAP_MIN)
+            gels.append({"minute": minute, "time": t, "km": km_at(t * 60), "where": "carry", "station": None})
+        else:
+            used.add(station)
+            t = at[station]
+            gels.append({"minute": minute, "time": t, "km": station, "where": "course", "station": station})
+        last = t
     return {"first_pace": first, "rest_pace": rest, "finish": finish, "splits": splits, "gels": gels,
-            "stations": stations}
+            "stations": stations, "gel_stations": gel_stations}

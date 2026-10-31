@@ -34,3 +34,18 @@ def test_race_plan_at_a_slower_pace():
     assert all(g["minute"] <= p["finish"] / 60 - 10 for g in p["gels"])
     course = [g["station"] for g in p["gels"] if g["where"] == "course"]
     assert len(course) == len(set(course)) and p["gels"][0]["where"] == "carry"
+
+
+def test_gels_evenly_spaced_at_any_pace():
+    for mp in (300, 341, 354, 369, 420):
+        p = fuel.race_plan(mp, STATIONS, GELS)
+        times = [g["time"] for g in p["gels"]]
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        assert all(25 <= gap <= 45 for gap in gaps), (mp, [round(t) for t in times])
+        assert times[-1] <= p["finish"] / 60 - 10, mp
+        course = [g for g in p["gels"] if g["where"] == "course"]
+        assert len({g["station"] for g in course}) == len(course) and all(g["km"] == g["station"] for g in course)
+
+
+def test_unsorted_stations_from_settings():
+    assert fuel.race_plan(341, STATIONS, list(reversed(GELS))) == fuel.race_plan(341, STATIONS, GELS)

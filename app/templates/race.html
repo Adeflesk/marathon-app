@@ -30,16 +30,18 @@
 
 <section aria-labelledby="gels-h" style="margin-top:24px">
   <h2 id="gels-h">Fuelling</h2>
-  <p class="mute">A Finisher gel at 45 minutes, then every 35, as in your long runs. Water at every station; the sports drink at every other one, or as you like.</p>
+  <p class="mute">A Finisher gel about every 35 minutes from 45, as in your long runs; on the course, at the gel station nearest that time. Water at every station; the sports drink at every other one, or as you like.</p>
   <table class="race-t">
     <tr><th>Gel</th><th class="num">Time</th><th class="num">About</th><th>From</th></tr>
     {% for g in plan.gels %}
-    <tr><td>{{ loop.index }}</td><td class="num">{{ g.minute }} min</td><td class="num">km {{ g.km|round|int }}</td>
+    <tr><td>{{ loop.index }}</td><td class="num">{{ g.time|round|int }} min</td><td class="num">km {{ g.km|km }}</td>
       <td>{% if g.where == 'carry' %}<span class="carry">Carry</span>{% else %}Course, km {{ g.station|km }}{% endif %}</td></tr>
     {% endfor %}
   </table>
   {% set carried = plan.gels|selectattr('where', 'equalto', 'carry')|list|length %}
-  <p style="margin-top:10px"><strong>Carry {{ carried }} gel{{ 's' if carried != 1 }}</strong>{% if carried %}, plus one spare{% endif %}. Course gels: km {{ s.race_gel_stations|map('km')|join(', ') }}. Drinks stations: km {{ plan.stations|map('km')|join(', ') }}.</p>
+  <p style="margin-top:10px"><strong>Carry {{ carried }} gel{{ 's' if carried != 1 }}</strong>{% if carried %}, plus one spare{% endif %}.
+    {%- if plan.gel_stations %} Course gels: km {{ plan.gel_stations|map('km')|join(', ') }}.{% endif %}
+    {%- if plan.stations %} Drinks stations: km {{ plan.stations|map('km')|join(', ') }}.{% endif %}</p>
   <p class="mute small">From recent editions: check the 2027 course guide before race day and adjust if the stations move.</p>
 </section>
 
@@ -49,7 +51,7 @@
     <li><strong>Nothing new on race day:</strong> the same shoes, kit, breakfast and gels you used on your long runs.</li>
     <li>Breakfast about three hours before the start; a gel or a few sips of sports drink 15 minutes before.</li>
     <li>Start in your pen for your finish time and let the first 5 km feel easy. The race starts at 30 km.</li>
-    <li>Take each gel just before a station, then wash it down with water there.</li>
+    <li>Take carried gels just before a station, then wash them down with its water; take course gels at the station, with its water.</li>
   </ul>
 </section>
 {% endblock %}

@@ -26,7 +26,7 @@ def test_race_page(client):
     page = client.get("/race")
     assert page.status_code == 200
     for text in ("5:46/km", "3:59:48", "Carry", "km 20", "From recent editions: check the 2027 course guide",
-                 "Nothing new on race day"):
+                 "Nothing new on race day", "Take carried gels just before a station"):
         assert text in page.text, text
 
 
