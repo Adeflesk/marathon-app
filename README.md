@@ -17,6 +17,11 @@ syncs runs from Smashrun and compares them with the plan.
    Or press F5 (the launch config is in `.vscode/launch.json`).
 3. Open http://localhost:8000. On your phone, use `--host 0.0.0.0` and your computer's IP.
 
+## On your phone's home screen
+
+In Chrome on Android, open the app, then the ⋮ menu → **Add to home screen** (or **Install app**). It opens
+full screen with its own icon. If you had a plain shortcut before, remove it and add the app this way.
+
 ## Smashrun token
 
 Open https://api.smashrun.com/v1/explorer, type `client` in the box at the top, click Connect and copy
@@ -27,7 +32,9 @@ one the same way and update both.
 
 ## After a run
 
-Sync from Smashrun once the run is there. Each new run's km splits and laps come with it, and This week
+Open This week or Progress once the run is in Smashrun: when a run planned for yesterday or today hasn't
+synced yet, the app syncs first (at most every 15 minutes). If the run still isn't there, a line at the top
+says so with a **Sync now** button; the button at the bottom of the week works too. Each new run's km splits and laps come with it, and This week
 shows a review of your last run: easy runs quicker than easy get flagged, long runs show whether the
 marathon-pace finish was on pace, and sessions run from the watch workout are checked rep by rep.
 Strides are listed one by one but not judged, since they go by feel; the review checks that the running

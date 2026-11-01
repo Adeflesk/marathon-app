@@ -36,6 +36,7 @@
 {% endblock %}
 {% block body %}
 {% if msg %}<p class="notice" role="status" style="margin-top:16px">{{ msg }}</p>{% endif %}
+{% include "_sync_line.html" %}
 {% set v = verdict %}
 {% set g = short(v.goal) %}
 <section id="verdict" class="verdict {{ v.state|replace(' ', '-') }}" aria-labelledby="verdict-h">

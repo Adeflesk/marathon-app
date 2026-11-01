@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Full bleed so Android can mask it to any shape; the mark stays inside the middle 80%. -->
+  <rect width="512" height="512" fill="#0E2A3B"/>
+  <polyline points="166,262 256,172 346,262" fill="none" stroke="#EEF2F1" stroke-width="44"
+            stroke-linecap="round" stroke-linejoin="round"/>
+  <clipPath id="band"><rect x="136" y="306" width="240" height="48" rx="24"/></clipPath>
+  <g clip-path="url(#band)">
+    <rect x="136" y="306" width="118" height="48" fill="#6FA894"/>
+    <rect x="258" y="306" width="66" height="48" fill="#E2B33C"/>
+    <rect x="328" y="306" width="48" height="48" fill="#C8372D"/>
+  </g>
+</svg>

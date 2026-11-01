@@ -1,0 +1,9 @@
+{# Sync on open: a failed sync's reason, then the run that still isn't in. #}
+{% if auto_sync.error %}<p class="notice" role="status" style="margin-top:12px">{{ auto_sync.error }}</p>{% endif %}
+{% if auto_sync.missing %}
+<form class="notice sync-line" method="post" action="/sync" style="margin-top:12px">
+  <span>{{ auto_sync.missing }}</span>
+  <input type="hidden" name="next" value="{{ request.url.path }}">
+  <button class="button quiet" type="submit">Sync now</button>
+</form>
+{% endif %}

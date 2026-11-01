@@ -23,8 +23,8 @@ Deployed to Fly.io (`fly.toml`, `Dockerfile`): `fly deploy`. SQLite and `equipme
 `marathon_data` volume at `/data` (via `DB_PATH`). Setting the `APP_PASSWORD` secret turns on HTTP Basic auth
 (middleware in `main.py`); leave it unset locally. `TZ=Europe/Dublin` so `date.today()` matches the user.
 
-Tests: `pip install -r requirements-dev.txt && pytest` (tests use defaults only and a temp DB, see
-`tests/conftest.py`). There's no linter or build step. To check plan output quickly without the server:
+Tests: `pip install -r requirements-dev.txt && pytest` (tests use defaults only and a temp DB, and never reach
+Smashrun: `tests/conftest.py` clears `SMASHRUN_TOKEN` and blocks its HTTP client). There's no linter or build step. To check plan output quickly without the server:
 
 ```bash
 python -c "from datetime import date; from app.config import load_settings; from app.plan import generate; [print(w['week'], w['phase'], w['target_km']) for w in generate(load_settings(), date.today())]"
@@ -84,7 +84,9 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
 - `app/moves.py` — pure: applies the user's moved/skipped sessions to the generated plan. `shift()` marks an
   item (`orig_date`, then `moved_from` + new `date`, or `skipped`); `relocate()` puts items moved past Sunday
   into the next week; `clash()` holds the warning rules; `can_move()` stops at race day and the plan's end.
-- `app/main.py` — `build_view()` is the hub every page uses: `apply_goal()` (the latest `goals` row overrides
+- `app/main.py` — `build_view()` is the hub every page uses (This week and Progress go through `view_with_sync()`,
+  which syncs first when a run from yesterday or today is missing and neither `last_sync` nor `last_sync_try`
+  in `meta` is under 15 minutes old; only with `SMASHRUN_TOKEN`): `apply_goal()` (the latest `goals` row overrides
   `goal_time` and marathon pace; the settings goal again restores exact settings paces) → `apply_result()` (the latest logged result
   sets `s["paces"]` and `s["result"]` via `pace_engine.from_result`) → generate plan → scale each week by the
   smaller of the *previous* week's check-in factor and the missed-week guard (`volume_guard()`; known weeks
@@ -93,7 +95,8 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   (shifted before logs are looked up), suggestions, and snacks → relocate strength → mark `movable`.
   Routes: `/`, `/plan`, `/progress`, `/race`, `/goal` (POST), `/fuel` (POST, toggles the tick on a done long run with a note), `/strength`, `/equipment` (GET/POST), `/workout/{date}.fit?n=`,
   `/workouts/week/{n}.zip`, `/sync`, `/checkin`, `/strength/log` (POST), `/snack` (POST), `/ankle/check` (POST),
-  `/ankle/tests` (POST), `/result` and `/result/delete` (POST), `/move` (POST; warns via `/?confirm=…` on a clash), `/move/undo` (POST).
+  `/ankle/tests` (POST), `/result` and `/result/delete` (POST), `/manifest.webmanifest` and the icons (from
+  `app/static/`, outside the password so Android can install the app), `/move` (POST; warns via `/?confirm=…` on a clash), `/move/undo` (POST).
   POSTs redirect with a 303 to their anchor.
 - `app/pace_engine.py` — pace maths. `from_result()` turns a result into paces and a goal verdict: easy,
   long, threshold and interval from fitness; marathon stays the settings' goal pace unless within 10 s/km of
@@ -128,7 +131,8 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   `checkins` (keyed by week number), `strength_logs` (logged sets, weight, reps, rating, ankle pain),
   `snack_logs` (daily ankle snack ticks), `ankle_tests` (readiness test values), `ankle_checks` (morning ankle checks),
   `moves` (a session's original date + `run`/`A`/`B` → new date, or NULL when skipped), `results` (races and
-  time trials: date, km, seconds), `goals` (goal changes: date, goal_time or "settings"; the latest wins), `fuel_logs` (date of a long run fuelled as planned) and `meta` (key/value; `last_sync` is written by a successful sync).
+  time trials: date, km, seconds), `goals` (goal changes: date, goal_time or "settings"; the latest wins), `fuel_logs` (date of a long run fuelled as planned) and `meta` (key/value; `last_sync` is written by a successful sync,
+  `last_sync_try` by each sync on open).
   Schema is `CREATE IF NOT EXISTS` on startup; there are no migrations. `DB_PATH` env var overrides `data/marathon.db`.
 
 ## Conventions

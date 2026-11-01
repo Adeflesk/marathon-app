@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from . import ankle, db, fuel, garmin, moves, progress, progression, review, smashrun, strength
@@ -18,6 +18,9 @@ from .plan import DAYS, _half, feedback_factor, generate, volume_caps
 from .sessions import flatten, pace_s, scale_session, step_km
 
 BASE = Path(__file__).resolve().parent
+ICONS = {"icon-192.png": "image/png", "icon-512.png": "image/png", "icon.svg": "image/svg+xml"}
+# Android fetches these without the login, so they skip the password (nothing in them is private)
+PUBLIC = {"/manifest.webmanifest"} | {f"/{name}" for name in ICONS}
 
 
 @asynccontextmanager
@@ -33,7 +36,7 @@ app = FastAPI(lifespan=lifespan)
 async def basic_auth(request: Request, call_next):
     """HTTP Basic auth when APP_PASSWORD is set (any username). Unset locally, so dev needs no login."""
     password = os.environ.get("APP_PASSWORD")
-    if password:
+    if password and request.url.path not in PUBLIC:
         given = ""
         scheme, _, encoded = request.headers.get("authorization", "").partition(" ")
         if scheme.lower() == "basic":
@@ -47,6 +50,29 @@ async def basic_auth(request: Request, call_next):
 
 
 templates = Jinja2Templates(directory=str(BASE / "templates"))
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    """Lets Android add the app to the home screen, opening full screen with its own icon."""
+    icons = [{"src": f"/icon-{n}.png", "sizes": f"{n}x{n}", "type": "image/png", "purpose": "any maskable"}
+             for n in (192, 512)]
+    return JSONResponse({
+        "name": "Barcelona build", "short_name": "Barcelona", "start_url": "/", "scope": "/",
+        "display": "standalone", "background_color": "#0E2A3B", "theme_color": "#0E2A3B",
+        "icons": icons + [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"}],
+    }, media_type="application/manifest+json")
+
+
+def _icon_route(name: str, kind: str):
+    def icon():
+        return FileResponse(BASE / "static" / name, media_type=kind,
+                            headers={"Cache-Control": "public, max-age=86400"})
+    app.add_api_route(f"/{name}", icon, methods=["GET"], name=name)
+
+
+for _name, _kind in ICONS.items():
+    _icon_route(_name, _kind)
 
 
 def _effort(pace: float | None, intensity: str, paces: dict) -> str:
@@ -335,9 +361,45 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict |
     w["ankle_state"] = st
 
 
+SYNC_PAGES = ("/", "/progress")  # the pages that sync when they open
+SYNC_GAP = timedelta(minutes=15)
+
+
+def _missing_runs(weeks: list[dict], t: date) -> list[date]:
+    """Days among yesterday and today with a planned run and nothing synced."""
+    days = {t - timedelta(days=1), t}
+    return sorted({wo["date"] for w in weeks for wo in w["workouts"]
+                   if wo["date"] in days and wo["km"] > 0 and not wo.get("skipped") and wo["actual_km"] is None})
+
+
+def _sync_due() -> bool:
+    """Neither a sync nor a try at one in the last 15 minutes."""
+    tries = [x for x in (db.get_meta("last_sync"), db.get_meta("last_sync_try")) if x]
+    return not tries or datetime.fromisoformat(max(tries)) <= datetime.now() - SYNC_GAP
+
+
+def view_with_sync():
+    """build_view, after a sync when a run from yesterday or today isn't in yet (at most every 15 minutes).
+    Returns the view and the top line: a failed sync's reason, and which run is still missing."""
+    s, weeks = build_view()
+    t = today()
+    missing = _missing_runs(weeks, t)
+    error = None
+    if missing and os.environ.get("SMASHRUN_TOKEN") and _sync_due():
+        db.set_meta("last_sync_try", datetime.now().isoformat(timespec="seconds"))
+        msg = run_sync()
+        error = msg if msg.startswith("Sync failed") else None
+        s, weeks = build_view()
+        missing = _missing_runs(weeks, t)
+    names = ["Yesterday's" if d < t else "Today's" for d in missing]
+    line = (f"{names[0]} run isn't in Smashrun yet." if len(names) == 1
+            else "Yesterday's and today's runs aren't in Smashrun yet." if names else None)
+    return s, weeks, {"error": error, "missing": line}
+
+
 @app.get("/")
 def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = "", prev: str = ""):
-    s, weeks = build_view()
+    s, weeks, auto_sync = view_with_sync()
     t = today()
     current = next((w for w in weeks if w["is_current"]), None)
     upcoming = weeks[0] if t < weeks[0]["start"] else current
@@ -409,6 +471,7 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
             "move_warning": move_warning,
             "last_summary": last_summary,
             "token_warning": token_warning,
+            "auto_sync": auto_sync,
             "msg": msg,
             "paces": s["paces"],
             "goal": s["goal_time"],
@@ -418,7 +481,7 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
 
 @app.get("/progress")
 def progress_page(request: Request, msg: str = ""):
-    s, weeks = build_view()
+    s, weeks, auto_sync = view_with_sync()
     t = today()
     st = weeks[0]["ankle_state"]
     ref_pace = load_settings()["paces"]["easy"]  # fixed, so a new result doesn't break the fitness line
@@ -433,7 +496,7 @@ def progress_page(request: Request, msg: str = ""):
                   "end": cutback["start"] + timedelta(days=6)} if cutback else None
     return templates.TemplateResponse(request, "progress.html", {
         "time_trial": time_trial,
-        "s": s, "msg": msg, "today": t, "verdict": verdict, "options": options, "week": current,
+        "s": s, "msg": msg, "auto_sync": auto_sync, "today": t, "verdict": verdict, "options": options, "week": current,
         "n_weeks": len(weeks), "why": progress.why_rows(weeks, t, ref_pace),
         "fitness": progress.fitness_trend(weeks, ref_pace), "ref_pace": ref_pace,
         "long_runs": progress.long_runs(weeks), "plan": progress.plan_bars(weeks),
@@ -545,18 +608,23 @@ def backup_db():
     )
 
 
-@app.post("/sync")
-def sync_now():
+def run_sync() -> str:
+    """Sync from Smashrun; the message for the page, success or failure."""
     s = load_settings()
     since = date.fromisoformat(s["plan_start"]) - timedelta(days=28)
     try:
         n = smashrun.sync(since)
-        msg = f"Synced {n} runs from Smashrun."
+        return f"Synced {n} runs from Smashrun."
     except smashrun.SyncError as e:
-        msg = f"Sync failed: {e}"
+        return f"Sync failed: {e}"
     except Exception as e:  # network errors etc.
-        msg = f"Sync failed: {type(e).__name__}: {e}"
-    return RedirectResponse(f"/?{urlencode({'msg': msg})}", status_code=303)
+        return f"Sync failed: {type(e).__name__}: {e}"
+
+
+@app.post("/sync")
+def sync_now(next_page: str = Form("/", alias="next")):
+    page = next_page if next_page in SYNC_PAGES else "/"
+    return RedirectResponse(f"{page}?{urlencode({'msg': run_sync()})}", status_code=303)
 
 
 @app.post("/checkin")
