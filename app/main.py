@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from . import ankle, db, fuel, garmin, moves, progress, progression, review, smashrun, strength
@@ -18,6 +18,9 @@ from .plan import DAYS, _half, feedback_factor, generate, volume_caps
 from .sessions import flatten, pace_s, scale_session, step_km
 
 BASE = Path(__file__).resolve().parent
+ICONS = {"icon-192.png": "image/png", "icon-512.png": "image/png", "icon.svg": "image/svg+xml"}
+# Android fetches these without the login, so they skip the password (nothing in them is private)
+PUBLIC = {"/manifest.webmanifest"} | {f"/{name}" for name in ICONS}
 
 
 @asynccontextmanager
@@ -33,7 +36,7 @@ app = FastAPI(lifespan=lifespan)
 async def basic_auth(request: Request, call_next):
     """HTTP Basic auth when APP_PASSWORD is set (any username). Unset locally, so dev needs no login."""
     password = os.environ.get("APP_PASSWORD")
-    if password:
+    if password and request.url.path not in PUBLIC:
         given = ""
         scheme, _, encoded = request.headers.get("authorization", "").partition(" ")
         if scheme.lower() == "basic":
@@ -47,6 +50,29 @@ async def basic_auth(request: Request, call_next):
 
 
 templates = Jinja2Templates(directory=str(BASE / "templates"))
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    """Lets Android add the app to the home screen, opening full screen with its own icon."""
+    icons = [{"src": f"/icon-{n}.png", "sizes": f"{n}x{n}", "type": "image/png", "purpose": "any maskable"}
+             for n in (192, 512)]
+    return JSONResponse({
+        "name": "Barcelona build", "short_name": "Barcelona", "start_url": "/", "scope": "/",
+        "display": "standalone", "background_color": "#0E2A3B", "theme_color": "#0E2A3B",
+        "icons": icons + [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"}],
+    }, media_type="application/manifest+json")
+
+
+def _icon_route(name: str, kind: str):
+    def icon():
+        return FileResponse(BASE / "static" / name, media_type=kind,
+                            headers={"Cache-Control": "public, max-age=86400"})
+    app.add_api_route(f"/{name}", icon, methods=["GET"], name=name)
+
+
+for _name, _kind in ICONS.items():
+    _icon_route(_name, _kind)
 
 
 def _effort(pace: float | None, intensity: str, paces: dict) -> str:

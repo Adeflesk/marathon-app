@@ -38,10 +38,13 @@ Needed from about week 8 (long runs of 90 minutes and more).
 
 ## 4. Less admin
 
-- [ ] **Sync on its own:** when the app opens and the last sync is more than a few hours old.
-- [ ] **Smashrun full login:** research whether a registered app's tokens refresh themselves, removing the
-      60-day token renewal. Depends on Smashrun approving an app.
-- [ ] **Home-screen app:** install from the phone's home screen so it opens like a native app.
+- [x] **Sync on its own:** This week and Progress sync when a run from yesterday or today is missing (at most
+      every 15 minutes); a top line offers Sync now if it still isn't in.
+- [ ] **Smashrun full login:** waiting on Smashrun. Researched (Nov 2026): a registered app gets 12-week
+      access tokens and refresh tokens that last until revoked, so the app could renew itself after a one-time
+      "Connect Smashrun". Needs a client ID and secret from Smashrun (hi@smashrun.com); the user applied in
+      Oct 2026 with no reply yet. Until then: the 60-day token and the 7-day warning.
+- [x] **Home-screen app:** a web app manifest and icon; added from Chrome it opens full screen.
 
 ## Decided against
 
@@ -54,7 +57,7 @@ Needed from about week 8 (long runs of 90 minutes and more).
 
 ## Also open (from the 29 Oct review)
 
-- [ ] Set `SMASHRUN_TOKEN_ISSUED` (`fly secrets set SMASHRUN_TOKEN_ISSUED=YYYY-MM-DD`).
+- [x] Set `SMASHRUN_TOKEN_ISSUED` (`fly secrets set SMASHRUN_TOKEN_ISSUED=YYYY-MM-DD`).
 - [ ] Week 7 time trial, then update paces (item 2 makes this an in-app step).
 - [ ] January: revisit the peak weeks (week 18: 32 km long run with a 12 km MP finish, 53% of the week;
       week 17's 10 and 10.5 km easy runs). Depends on how weeks 12–16 go.
