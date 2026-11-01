@@ -154,6 +154,7 @@
 {% endblock %}
 {% block body %}
 {% if msg %}<p class="notice" role="status">{{ msg }}</p>{% endif %}
+{% include "_sync_line.html" %}
 {% if token_warning %}{% set tw = token_warning %}
 <p class="notice" role="status" style="margin-top:12px">
   {% if tw.days >= 0 %}Your Smashrun token runs out on {{ tw.expires.strftime('%A %-d %B') }}{{ ' (today)' if tw.days == 0 else ' (in ' ~ tw.days ~ ' day' ~ ('s' if tw.days != 1) ~ ')' }}.

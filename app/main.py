@@ -335,9 +335,45 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict |
     w["ankle_state"] = st
 
 
+SYNC_PAGES = ("/", "/progress")  # the pages that sync when they open
+SYNC_GAP = timedelta(minutes=15)
+
+
+def _missing_runs(weeks: list[dict], t: date) -> list[date]:
+    """Days among yesterday and today with a planned run and nothing synced."""
+    days = {t - timedelta(days=1), t}
+    return sorted({wo["date"] for w in weeks for wo in w["workouts"]
+                   if wo["date"] in days and wo["km"] > 0 and not wo.get("skipped") and wo["actual_km"] is None})
+
+
+def _sync_due() -> bool:
+    """Neither a sync nor a try at one in the last 15 minutes."""
+    tries = [x for x in (db.get_meta("last_sync"), db.get_meta("last_sync_try")) if x]
+    return not tries or datetime.fromisoformat(max(tries)) <= datetime.now() - SYNC_GAP
+
+
+def view_with_sync():
+    """build_view, after a sync when a run from yesterday or today isn't in yet (at most every 15 minutes).
+    Returns the view and the top line: a failed sync's reason, and which run is still missing."""
+    s, weeks = build_view()
+    t = today()
+    missing = _missing_runs(weeks, t)
+    error = None
+    if missing and os.environ.get("SMASHRUN_TOKEN") and _sync_due():
+        db.set_meta("last_sync_try", datetime.now().isoformat(timespec="seconds"))
+        msg = run_sync()
+        error = msg if msg.startswith("Sync failed") else None
+        s, weeks = build_view()
+        missing = _missing_runs(weeks, t)
+    names = ["Yesterday's" if d < t else "Today's" for d in missing]
+    line = (f"{names[0]} run isn't in Smashrun yet." if len(names) == 1
+            else "Yesterday's and today's runs aren't in Smashrun yet." if names else None)
+    return s, weeks, {"error": error, "missing": line}
+
+
 @app.get("/")
 def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = "", prev: str = ""):
-    s, weeks = build_view()
+    s, weeks, auto_sync = view_with_sync()
     t = today()
     current = next((w for w in weeks if w["is_current"]), None)
     upcoming = weeks[0] if t < weeks[0]["start"] else current
@@ -409,6 +445,7 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
             "move_warning": move_warning,
             "last_summary": last_summary,
             "token_warning": token_warning,
+            "auto_sync": auto_sync,
             "msg": msg,
             "paces": s["paces"],
             "goal": s["goal_time"],
@@ -418,7 +455,7 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
 
 @app.get("/progress")
 def progress_page(request: Request, msg: str = ""):
-    s, weeks = build_view()
+    s, weeks, auto_sync = view_with_sync()
     t = today()
     st = weeks[0]["ankle_state"]
     ref_pace = load_settings()["paces"]["easy"]  # fixed, so a new result doesn't break the fitness line
@@ -433,7 +470,7 @@ def progress_page(request: Request, msg: str = ""):
                   "end": cutback["start"] + timedelta(days=6)} if cutback else None
     return templates.TemplateResponse(request, "progress.html", {
         "time_trial": time_trial,
-        "s": s, "msg": msg, "today": t, "verdict": verdict, "options": options, "week": current,
+        "s": s, "msg": msg, "auto_sync": auto_sync, "today": t, "verdict": verdict, "options": options, "week": current,
         "n_weeks": len(weeks), "why": progress.why_rows(weeks, t, ref_pace),
         "fitness": progress.fitness_trend(weeks, ref_pace), "ref_pace": ref_pace,
         "long_runs": progress.long_runs(weeks), "plan": progress.plan_bars(weeks),
@@ -545,18 +582,23 @@ def backup_db():
     )
 
 
-@app.post("/sync")
-def sync_now():
+def run_sync() -> str:
+    """Sync from Smashrun; the message for the page, success or failure."""
     s = load_settings()
     since = date.fromisoformat(s["plan_start"]) - timedelta(days=28)
     try:
         n = smashrun.sync(since)
-        msg = f"Synced {n} runs from Smashrun."
+        return f"Synced {n} runs from Smashrun."
     except smashrun.SyncError as e:
-        msg = f"Sync failed: {e}"
+        return f"Sync failed: {e}"
     except Exception as e:  # network errors etc.
-        msg = f"Sync failed: {type(e).__name__}: {e}"
-    return RedirectResponse(f"/?{urlencode({'msg': msg})}", status_code=303)
+        return f"Sync failed: {type(e).__name__}: {e}"
+
+
+@app.post("/sync")
+def sync_now(next_page: str = Form("/", alias="next")):
+    page = next_page if next_page in SYNC_PAGES else "/"
+    return RedirectResponse(f"{page}?{urlencode({'msg': run_sync()})}", status_code=303)
 
 
 @app.post("/checkin")
