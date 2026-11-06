@@ -40,6 +40,9 @@ def token_expiry() -> date | None:
 
 
 MAX_DETAILS_PER_SYNC = 40  # two calls each; keeps a first sync well inside 250 requests an hour
+TIMEOUT = 20  # seconds per request
+# Sync on open runs while the page waits, so it fetches less and gives up sooner; the Sync button fetches the rest
+QUICK = {"max_details": 4, "timeout": 8}
 
 
 def _get(client, url, headers):
@@ -49,9 +52,10 @@ def _get(client, url, headers):
     return r
 
 
-def _fetch_details(client, headers, ids: list[int]) -> None:
-    """Km splits and laps for runs that don't have them yet. A run that fails is retried next sync."""
-    missing = [i for i in ids if i not in db.run_details(ids)][:MAX_DETAILS_PER_SYNC]
+def _fetch_details(client, headers, ids: list[int], limit: int = MAX_DETAILS_PER_SYNC) -> None:
+    """Km splits and laps for runs that don't have them yet, newest first. A run that fails is retried next sync."""
+    have = db.run_details(ids)
+    missing = sorted((i for i in set(ids) if i not in have), reverse=True)[:limit]
     for i in missing:
         detail = _get(client, f"{BASE}/my/activities/{i}", headers)
         splits = _get(client, f"{BASE}/my/activities/{i}/splits/km", headers)
@@ -62,14 +66,14 @@ def _fetch_details(client, headers, ids: list[int]) -> None:
                       (i, json.dumps(splits.json()), json.dumps(detail.json().get("laps") or [])))
 
 
-def sync(since: date) -> int:
+def sync(since: date, max_details: int = MAX_DETAILS_PER_SYNC, timeout: float = TIMEOUT) -> int:
     token = os.environ.get("SMASHRUN_TOKEN", "").strip()
     if not token:
         raise SyncError("SMASHRUN_TOKEN is not set. Copy .env.example to .env and add your token.")
     from_ts = int(time.mktime(datetime(since.year, since.month, since.day).timetuple()))
     headers = {"Authorization": f"Bearer {token}"}
     saved, skipped, page, sample_keys, ids = 0, 0, 0, [], []
-    with httpx.Client(timeout=20) as client:
+    with httpx.Client(timeout=timeout) as client:
         while True:
             r = client.get(
                 f"{BASE}/my/activities/search",
@@ -108,7 +112,7 @@ def sync(since: date) -> int:
             page += 1
             if page > 20:
                 break
-        _fetch_details(client, headers, ids)
+        _fetch_details(client, headers, ids, max_details)
     if skipped and not saved:
         raise SyncError(f"Skipped {skipped} runs with no activityId. Fields Smashrun sent: {', '.join(sample_keys[:20])}")
     db.set_meta("last_sync", datetime.now().isoformat(timespec="seconds"))  # weeks before this are known

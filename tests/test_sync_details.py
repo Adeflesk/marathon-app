@@ -47,3 +47,10 @@ def test_details_fetched_once(fake_smashrun):
     smashrun.sync(date(2026, 10, 1))
     detail_calls = [p for p in fake_smashrun[first:] if not p.endswith("/search")]
     assert detail_calls == []
+
+
+def test_quick_sync_fetches_details_for_the_newest_runs_only(fake_smashrun):
+    smashrun.sync(date(2026, 10, 1), max_details=1)
+    assert set(db.run_details([11, 12])) == {12}  # the later run; 11 waits for the next sync
+    smashrun.sync(date(2026, 10, 1))
+    assert set(db.run_details([11, 12])) == {11, 12}

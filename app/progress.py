@@ -107,6 +107,8 @@ PAIN_WARN = 3
 
 
 def why_rows(weeks: list[dict], t: date, ref_pace: float) -> list[dict]:
+    """The four reasons behind the verdict: [{key, ok, text}]. `ok` is None when there's nothing to judge yet,
+    so the page shows no tick for it."""
     window = [w for w in weeks if w["is_past"]][-WINDOW:]
     done = [w for w in window if w["synced"]]  # a week no sync has covered may be missing runs
     unsynced = [w["week"] for w in window if not w["synced"]]
@@ -123,9 +125,9 @@ def why_rows(weeks: list[dict], t: date, ref_pace: float) -> list[dict]:
             text += "; week " + ", ".join(map(str, unsynced)) + " not synced yet"
         plan = {"key": "plan", "ok": share >= PLAN_OK, "text": text}
     elif unsynced:
-        plan = {"key": "plan", "ok": True, "text": "not synced since last week ended: sync to see it."}
+        plan = {"key": "plan", "ok": None, "text": "not synced since last week ended: sync to see it."}
     else:
-        plan = {"key": "plan", "ok": True, "text": "Nothing to judge yet: week 1 is still under way."}
+        plan = {"key": "plan", "ok": None, "text": "Nothing to judge yet: week 1 is still under way."}
 
     hrs = [x for x in fitness_trend(weeks, ref_pace) if x["hr"] is not None]
     if len(hrs) >= 2:
@@ -133,11 +135,11 @@ def why_rows(weeks: list[dict], t: date, ref_pace: float) -> list[dict]:
         fitness = {"key": "fitness", "ok": last["hr"] <= first["hr"],
                    "text": f"heart rate at easy pace {first['hr']:g} in week {first['week']}, {last['hr']:g} now"}
     else:
-        fitness = {"key": "fitness", "ok": True, "text": "not enough easy-pace splits yet for a trend"}
+        fitness = {"key": "fitness", "ok": None, "text": "not enough easy-pace splits yet for a trend"}
 
     recent = [r for r in long_runs(weeks) if r["drift"] is not None][-3:]
     drifted = sum(1 for r in recent if r["drift"] >= DRIFT_WARN)
-    long = {"key": "long", "ok": drifted < 2,
+    long = {"key": "long", "ok": drifted < 2 if recent else None,
             "text": (f"{drifted} of the last {len(recent)} drifted" if drifted else
                      ("the last one held steady" if len(recent) == 1 else f"the last {len(recent)} held steady")
                      if recent else "none with heart-rate data yet")}

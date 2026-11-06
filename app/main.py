@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from math import gcd
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import ankle, db, fuel, garmin, moves, progress, progression, review, smashrun, strength
 from .config import load_settings, race_date
-from .pace_engine import fmt_pace, fmt_time, from_result, pace_per_mi, parse_time
+from .pace_engine import MP_GAP, fmt_pace, fmt_time, from_result, pace_per_mi, parse_time
 from .plan import DAYS, _half, feedback_factor, generate, volume_caps
 from .sessions import flatten, pace_s, scale_session, step_km
 
@@ -30,6 +30,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.middleware("http")
+async def same_origin_posts(request: Request, call_next):
+    """Refuse a form post sent from another site. Browsers resend Basic auth on their own, so without this a page
+    elsewhere could post to /goal or /move while you're logged in. Posts without an Origin (tests, curl) pass."""
+    origin = request.headers.get("origin")
+    if request.method == "POST" and origin is not None and urlsplit(origin).netloc != request.headers.get("host"):
+        return Response("Form posts must come from this app.", status_code=403)
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -145,8 +155,10 @@ def apply_goal(s: dict, t: date) -> None:
             current = goal
     if current != s["settings_goal"]:
         s["goal_time"] = current
-        s["paces"]["marathon"] = round(parse_time(current) / 42.195)
-        s["paces"]["subthreshold"] = s["paces"]["marathon"] - 9
+        # as in pace_engine.from_result: MP stays MP_GAP slower than threshold, sub-threshold never quicker than it
+        tempo = s["paces"]["tempo"]
+        s["paces"]["marathon"] = max(round(parse_time(current) / 42.195), tempo + MP_GAP)
+        s["paces"]["subthreshold"] = max(s["paces"]["marathon"] - 9, tempo)
 
 
 def apply_result(s: dict, t: date) -> None:
@@ -387,7 +399,7 @@ def view_with_sync():
     error = None
     if missing and os.environ.get("SMASHRUN_TOKEN") and _sync_due():
         db.set_meta("last_sync_try", datetime.now().isoformat(timespec="seconds"))
-        msg = run_sync()
+        msg = run_sync(quick=True)
         error = msg if msg.startswith("Sync failed") else None
         s, weeks = build_view()
         missing = _missing_runs(weeks, t)
@@ -608,12 +620,13 @@ def backup_db():
     )
 
 
-def run_sync() -> str:
-    """Sync from Smashrun; the message for the page, success or failure."""
+def run_sync(quick: bool = False) -> str:
+    """Sync from Smashrun; the message for the page, success or failure. `quick` (sync on open) fetches the
+    details of only the newest few runs and gives up sooner, so the page doesn't hang; Sync fetches the rest."""
     s = load_settings()
     since = date.fromisoformat(s["plan_start"]) - timedelta(days=28)
     try:
-        n = smashrun.sync(since)
+        n = smashrun.sync(since, **(smashrun.QUICK if quick else {}))
         return f"Synced {n} runs from Smashrun."
     except smashrun.SyncError as e:
         return f"Sync failed: {e}"

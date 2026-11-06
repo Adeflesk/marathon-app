@@ -1,17 +1,28 @@
 import json
 import os
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
 DB_PATH = os.environ.get("DB_PATH", str(Path(__file__).resolve().parent.parent / "data" / "marathon.db"))
 
 
-def conn() -> sqlite3.Connection:
+@contextmanager
+def conn() -> Iterator[sqlite3.Connection]:
+    """A connection that commits on success, rolls back on error, and is always closed.
+
+    (`with sqlite3.connect()` alone commits but leaves the connection open.)
+    """
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB_PATH)
     c.row_factory = sqlite3.Row
-    return c
+    try:
+        with c:
+            yield c
+    finally:
+        c.close()
 
 
 def backup_bytes() -> bytes:
@@ -32,6 +43,8 @@ def backup_bytes() -> bytes:
 
 def init() -> None:
     with conn() as c:
+        # WAL lets a page read while a sync writes; the setting stays with the database file
+        c.execute("PRAGMA journal_mode=WAL")
         c.executescript(
             """
             CREATE TABLE IF NOT EXISTS activities (

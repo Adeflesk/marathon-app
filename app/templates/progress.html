@@ -13,6 +13,7 @@
   .why li::before { position: absolute; left: 0; font-weight: 700; }
   .why li.ok::before { content: "✓"; color: var(--good); }
   .why li.warn::before { content: "!"; color: var(--warn); left: 6px; }
+  .why li.wait::before { content: "–"; color: var(--mute); left: 4px; }
   .goals { display: grid; gap: 10px; margin-top: 12px; }
   .goal { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--surface); }
   .goal b { font-size: 1.25rem; }
@@ -59,7 +60,7 @@
   {% endif %}
   <ul class="why">
     {% set LABEL = {"plan": "Plan", "fitness": "Fitness", "long": "Long runs", "ankle": "Ankle"} %}
-    {% for row in why %}<li class="{{ 'ok' if row.ok else 'warn' }}"><strong>{{ LABEL[row.key] }}:</strong> {{ row.text }}</li>{% endfor %}
+    {% for row in why %}<li class="{{ 'wait' if row.ok is none else 'ok' if row.ok else 'warn' }}"><strong>{{ LABEL[row.key] }}:</strong> {{ row.text }}</li>{% endfor %}
   </ul>
   {% if options %}
   <h2 style="margin-top:20px">{% if v.state in ('within reach', 'stretch') %}Goals that fit where you are{% else %}Your goal{% endif %}</h2>

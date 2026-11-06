@@ -81,6 +81,7 @@
   .profile .here { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
   .profile .planned, .profile .actual { vector-effect: non-scaling-stroke; }
   .profile .axis { position: relative; display: flex; justify-content: space-between; margin-top: 6px; }
+  .profile .axis .hidden { visibility: hidden; }
   .profile .here-label { position: absolute; top: 0; transform: translateX(-50%); color: var(--ink); white-space: nowrap; }
 
   .paces td:first-child { font-weight: 600; }
@@ -349,10 +350,14 @@
       <line class="here" x1="{{ x }}" x2="{{ x }}" y1="-6" y2="{{ H }}" vector-effect="non-scaling-stroke"/>
     {% endif %}
   </svg>
+  {% set here = (100 * profile.current / (n - 1)) if profile.current is not none and n > 1 else none %}
+  {% set near = 'start' if here is not none and here < 22 else 'end' if here is not none and here > 78 else none %}
   <p class="axis small mute">
-    <span>Week 1</span>
-    {% if profile.current is not none %}<span class="here-label" style="left: {{ (100 * profile.current / (n - 1))|round(1) }}%">You are here</span>{% endif %}
-    <span>Race</span>
+    {# near either end, "You are here" sits against that edge and takes the end label's place #}
+    <span{{ ' class="hidden"'|safe if near == 'start' }}>Week 1</span>
+    {% if here is not none %}<span class="here-label"
+      style="{{ 'left: 0; transform: none' if near == 'start' else 'right: 0; transform: none' if near == 'end' else 'left: ' ~ (here|round(1)) ~ '%' }}">You are here, week {{ profile.current + 1 }}</span>{% endif %}
+    <span{{ ' class="hidden"'|safe if near == 'end' }}>Race</span>
   </p>
 </section>
 
@@ -395,7 +400,7 @@
         <label for="result-time">Time (mm:ss or h:mm:ss)</label>
         <input type="text" id="result-time" name="time" inputmode="numeric" placeholder="25:30" pattern="[0-9:]+" required>
       </div>
-      <button type="submit">Save result</button>
+      <div><button class="button" type="submit">Save result</button></div>
     </form>
     {% if r %}
     <form method="post" action="/result/delete" class="inline" style="margin-top:12px">

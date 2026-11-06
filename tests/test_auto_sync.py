@@ -32,8 +32,9 @@ class FakeSync:
     def __init__(self):
         self.calls, self.adds, self.error = 0, [], None
 
-    def __call__(self, since):
+    def __call__(self, since, **limits):
         self.calls += 1
+        self.limits = limits
         if self.error:
             raise self.error
         for day in self.adds:
@@ -70,6 +71,12 @@ def test_opening_this_week_syncs_a_missing_run(client, fake):
     page = client.text("/")
     assert fake.calls == 1
     assert "isn't in Smashrun yet" not in page
+    assert fake.limits == smashrun.QUICK  # the page waits, so it fetches less; Sync now fetches the rest
+
+
+def test_sync_now_is_a_full_sync(client, fake):
+    client.post("/sync", data={"next": "/"})
+    assert fake.calls == 1 and fake.limits == {}
 
 
 def test_still_missing_after_the_sync_says_so(client, fake):

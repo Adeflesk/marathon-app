@@ -124,7 +124,8 @@ def test_why_rows_warn():
 
 def test_why_rows_with_nothing_to_go_on():
     r = rows([full_week(1, past=False, current=True)])
-    assert all(v["ok"] for v in r.values())
+    assert not [k for k, v in r.items() if v["ok"] is False]  # nothing is flagged
+    assert r["plan"]["ok"] is None and r["fitness"]["ok"] is None  # and nothing to judge gets no tick either
     assert r["long"]["text"] == "the last one held steady"
 
 

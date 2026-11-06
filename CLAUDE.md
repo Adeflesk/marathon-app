@@ -21,7 +21,7 @@ python -m app.pace_engine 10 52:30         # training paces from a 10 km in 52:3
 
 Deployed to Fly.io (`fly.toml`, `Dockerfile`): `fly deploy`. SQLite and `equipment.json` live on the
 `marathon_data` volume at `/data` (via `DB_PATH`). Setting the `APP_PASSWORD` secret turns on HTTP Basic auth
-(middleware in `main.py`); leave it unset locally. `TZ=Europe/Dublin` so `date.today()` matches the user.
+(middleware in `main.py`); leave it unset locally. A second middleware refuses POSTs whose `Origin` is another site. `TZ=Europe/Dublin` so `date.today()` matches the user.
 
 Tests: `pip install -r requirements-dev.txt && pytest` (tests use defaults only and a temp DB, and never reach
 Smashrun: `tests/conftest.py` clears `SMASHRUN_TOKEN` and blocks its HTTP client). There's no linter or build step. To check plan output quickly without the server:
@@ -86,7 +86,7 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   into the next week; `clash()` holds the warning rules; `can_move()` stops at race day and the plan's end.
 - `app/main.py` — `build_view()` is the hub every page uses (This week and Progress go through `view_with_sync()`,
   which syncs first when a run from yesterday or today is missing and neither `last_sync` nor `last_sync_try`
-  in `meta` is under 15 minutes old; only with `SMASHRUN_TOKEN`): `apply_goal()` (the latest `goals` row overrides
+  in `meta` is under 15 minutes old; only with `SMASHRUN_TOKEN`; a quick sync, `smashrun.QUICK`: details for the newest 4 runs, 8 s timeout, while Sync fetches the rest): `apply_goal()` (the latest `goals` row overrides
   `goal_time` and marathon pace; the settings goal again restores exact settings paces) → `apply_result()` (the latest logged result
   sets `s["paces"]` and `s["result"]` via `pace_engine.from_result`) → generate plan → scale each week by the
   smaller of the *previous* week's check-in factor and the missed-week guard (`volume_guard()`; known weeks
