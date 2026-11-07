@@ -127,6 +127,27 @@ def init() -> None:
         )
 
 
+def actual_by_date() -> dict[str, dict]:
+    """Synced runs summed by ISO date: {"km", "seconds", "hr": [avg HRs], "main": the day's longest run}."""
+    out: dict[str, dict] = {}
+    with conn() as c:
+        for r in c.execute("SELECT id, date, km, seconds, avg_hr FROM activities"):
+            d = out.setdefault(r["date"], {"km": 0.0, "seconds": 0, "hr": [], "main": None})
+            d["km"] += r["km"]
+            d["seconds"] += r["seconds"]
+            if r["avg_hr"]:
+                d["hr"].append(r["avg_hr"])
+            if d["main"] is None or r["km"] > d["main"]["km"]:  # the day's longest run gets the review
+                d["main"] = {"id": r["id"], "km": r["km"], "seconds": r["seconds"]}
+    return out
+
+
+def checkins() -> dict[int, dict]:
+    """Weekly check-ins by week number."""
+    with conn() as c:
+        return {r["week"]: dict(r) for r in c.execute("SELECT * FROM checkins")}
+
+
 def run_details(ids: list[int]) -> dict[int, dict]:
     """Stored Smashrun km splits and laps by activity id: {id: {"splits": [...], "laps": [...]}}."""
     if not ids:

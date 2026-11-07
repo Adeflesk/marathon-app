@@ -6,7 +6,6 @@ for an open target (recoveries). Sessions follow the plan's block, counted back 
 general (fartlek), threshold (cruise intervals), strength (just under MP-10 s reps) and specific
 (long reps at MP), with a smaller version in cutback weeks and a short MP touch in the taper.
 """
-import math
 
 from .pace_engine import fmt_pace
 from .plan import _half

@@ -84,15 +84,25 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
 - `app/moves.py` — pure: applies the user's moved/skipped sessions to the generated plan. `shift()` marks an
   item (`orig_date`, then `moved_from` + new `date`, or `skipped`); `relocate()` puts items moved past Sunday
   into the next week; `clash()` holds the warning rules; `can_move()` stops at race day and the plan's end.
-- `app/main.py` — `build_view()` is the hub every page uses (This week and Progress go through `view_with_sync()`,
-  which syncs first when a run from yesterday or today is missing and neither `last_sync` nor `last_sync_try`
-  in `meta` is under 15 minutes old; only with `SMASHRUN_TOKEN`; a quick sync, `smashrun.QUICK`: details for the newest 4 runs, 8 s timeout, while Sync fetches the rest): `apply_goal()` (the latest `goals` row overrides
-  `goal_time` and marathon pace; the settings goal again restores exact settings paces) → `apply_result()` (the latest logged result
-  sets `s["paces"]` and `s["result"]` via `pace_engine.from_result`) → generate plan → scale each week by the
-  smaller of the *previous* week's check-in factor and the missed-week guard (`volume_guard()`; known weeks
-  are over and covered by `meta.last_sync`, marked `w["synced"]`; strength follows the check-in only) → shift and relocate moved runs → join actual runs from SQLite by date (a day with two runs
-  shares its actual; the longer run gets the review) → compute ankle context and attach strength sessions
-  (shifted before logs are looked up), suggestions, and snacks → relocate strength → mark `movable`.
+- `app/view.py` — builds every page's view; a functional core with one read at the edge.
+  - `load_facts()` is the only storage read: every table, `settings.json` and the equipment, as a frozen `Facts`.
+  - `build_view(facts, today)` is pure (it deep-copies the settings; tested without a database in
+    `tests/test_view_pure.py`). Its pipeline: `apply_goal()` (the latest `goals` row overrides `goal_time` and
+    marathon pace, never within `MP_GAP` of threshold; the settings goal again restores exact settings paces) →
+    `apply_result()` (the latest result sets `s["paces"]` and `s["result"]` via `pace_engine.from_result`) →
+    generate → `ankle_state()` → `scale_and_shift_runs()` (each week by the smaller of the *previous* week's
+    check-in factor and the missed-week guard, `volume_guard()`: known weeks are over and covered by
+    `last_sync`, marked `w["synced"]`; fuel notes; moves, then relocate) → `join_actuals()` (actual runs by date;
+    a day with two runs shares its actual, the longer run gets the review; then `attach_strength()`, shifted
+    before logs are looked up, with suggestions and snacks; then relocate strength) → `mark_done_and_movable()`.
+  - Also the questions pages ask of a built view: `missing_runs()`, `session_at()`, `move_warning()`.
+  - Page data from a built view, pure too: `dashboard()` is everything This week shows (`next_run()`, `last_run()`,
+    `ankle_tests()`, `last_summary()`, `profile()`, the token warning); its route only adds the message and sync line.
+- `app/main.py` — the shell: routes, the auth and same-origin middlewares, Jinja filters, and `build_view()`,
+  which is `view.build_view(view.load_facts(), today())` (tests patch `main.today`). This week and Progress go
+  through `view_with_sync()`, which syncs first when a run from yesterday or today is missing and neither
+  `last_sync` nor `last_sync_try` in `meta` is under 15 minutes old (only with `SMASHRUN_TOKEN`; a quick sync,
+  `smashrun.QUICK`: details for the newest 4 runs, 8 s timeout, while Sync fetches the rest).
   Routes: `/`, `/plan`, `/progress`, `/race`, `/goal` (POST), `/fuel` (POST, toggles the tick on a done long run with a note), `/strength`, `/equipment` (GET/POST), `/workout/{date}.fit?n=`,
   `/workouts/week/{n}.zip`, `/sync`, `/checkin`, `/strength/log` (POST), `/snack` (POST), `/ankle/check` (POST),
   `/ankle/tests` (POST), `/result` and `/result/delete` (POST), `/manifest.webmanifest` and the icons (from

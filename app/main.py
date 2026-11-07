@@ -3,7 +3,6 @@ import os
 import secrets
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
-from math import gcd
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
@@ -11,11 +10,11 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from . import ankle, db, fuel, garmin, moves, progress, progression, review, smashrun, strength
+from . import ankle, db, fuel, garmin, moves, progress, smashrun, strength, view
 from .config import load_settings, race_date
-from .pace_engine import MP_GAP, fmt_pace, fmt_time, from_result, pace_per_mi, parse_time
-from .plan import DAYS, _half, feedback_factor, generate, volume_caps
-from .sessions import flatten, pace_s, scale_session, step_km
+from .pace_engine import fmt_pace, fmt_time, pace_per_mi, parse_time
+from .plan import generate
+from .sessions import flatten, pace_s, step_km
 
 BASE = Path(__file__).resolve().parent
 ICONS = {"icon-192.png": "image/png", "icon-512.png": "image/png", "icon.svg": "image/svg+xml"}
@@ -123,265 +122,13 @@ def today() -> date:
     return date.today()
 
 
-def actual_by_date() -> dict[str, dict]:
-    out: dict[str, dict] = {}
-    with db.conn() as c:
-        for r in c.execute("SELECT id, date, km, seconds, avg_hr FROM activities"):
-            d = out.setdefault(r["date"], {"km": 0.0, "seconds": 0, "hr": [], "main": None})
-            d["km"] += r["km"]
-            d["seconds"] += r["seconds"]
-            if r["avg_hr"]:
-                d["hr"].append(r["avg_hr"])
-            if d["main"] is None or r["km"] > d["main"]["km"]:  # the day's longest run gets the review
-                d["main"] = {"id": r["id"], "km": r["km"], "seconds": r["seconds"]}
-    return out
-
-
-GOAL_SETTINGS = "settings"  # a stored goal meaning "back to whatever settings.json says"
-
-
-def apply_goal(s: dict, t: date) -> None:
-    """The goal the user last picked (on or before `t`) overrides the settings' goal and its pace.
-
-    Picking the settings' goal again restores the settings' paces exactly. Also sets s["settings_goal"]
-    and s["goal_changes"] ([{"date", "from", "to"}], oldest first) for the progress page.
-    """
-    s["settings_goal"] = current = s["goal_time"]
-    s["goal_changes"] = []
-    for g in db.goals():
-        goal = s["settings_goal"] if g["goal_time"] == GOAL_SETTINGS else g["goal_time"]
-        if g["date"] <= t.isoformat() and goal != current:
-            s["goal_changes"].append({"date": g["date"], "from": current, "to": goal})
-            current = goal
-    if current != s["settings_goal"]:
-        s["goal_time"] = current
-        # as in pace_engine.from_result: MP stays MP_GAP slower than threshold, sub-threshold never quicker than it
-        tempo = s["paces"]["tempo"]
-        s["paces"]["marathon"] = max(round(parse_time(current) / 42.195), tempo + MP_GAP)
-        s["paces"]["subthreshold"] = max(s["paces"]["marathon"] - 9, tempo)
-
-
-def apply_result(s: dict, t: date) -> None:
-    """The latest race or time trial on or before `t` sets the paces, with a read of the goal."""
-    latest = next((r for r in reversed(db.results()) if r["date"] <= t.isoformat()), None)
-    if latest:
-        read = from_result(s["paces"], parse_time(s["goal_time"]), latest["km"], latest["seconds"])
-        s["paces"] = read["paces"]
-        s["result"] = {**latest, **read}
-
-
-def volume_guard(weeks: list[dict], actual: dict, checkins: dict, t: date, base: float) -> tuple[dict[int, dict], set[int]]:
-    """plan.volume_caps from the stored facts, and the weeks a sync has covered (the only ones it counts)."""
-    last = db.get_meta("last_sync")
-    synced = date.fromisoformat(last[:10]) if last else None
-    run = {w["week"]: 0.0 for w in weeks}
-    starts = {w["start"]: w["week"] for w in weeks}
-    for d, a in actual.items():
-        day = date.fromisoformat(d)
-        monday = day - timedelta(days=day.weekday())
-        if monday in starts:
-            run[starts[monday]] += a["km"]
-    # A week counts once it's over and a sync ran on or after its Sunday (usually after the long run; a sync
-    # before it makes the week look short until the next sync puts it right).
-    known = {w["week"] for w in weeks
-             if synced and w["start"] + timedelta(days=6) < t and w["start"] + timedelta(days=6) <= synced}
-    planned = [{"week": w["week"], "phase": w["phase"],
-                "km": w["target_km"] * feedback_factor(checkins.get(w["week"] - 1))} for w in weeks]
-    return volume_caps(planned, run, known, base), known
-
-
 def build_view():
-    s = load_settings()
-    t = today()
-    apply_goal(s, t)
-    apply_result(s, t)
-    weeks = generate(s, t)
-    actual = actual_by_date()
-    details = db.run_details([a["main"]["id"] for a in actual.values()])
-    eq = strength.load_equipment()
-    with db.conn() as c:
-        checkins = {r["week"]: dict(r) for r in c.execute("SELECT * FROM checkins")}
-    st = ankle_state(t, weeks, list(checkins.values()))
-    moved = moves.index(db.moves())
-    caps, synced = volume_guard(weeks, actual, checkins, t, s["base_weekly_km"])
-    # Each run is scaled by its own week's check-in or the missed-week guard (the smaller wins), then follows
-    # any move (relocate takes it across Sunday). Strength follows the check-in only.
-    for w in weeks:
-        factor = feedback_factor(checkins.get(w["week"] - 1))
-        w["factor"] = factor
-        w["checkin"] = checkins.get(w["week"])
-        w["synced"] = w["week"] in synced  # over, and a sync has covered it
-        cap = caps.get(w["week"])
-        run_factor = factor
-        w["guard"] = None
-        if cap and w["target_km"] and cap["km"] / w["target_km"] < factor:
-            run_factor = cap["km"] / w["target_km"]
-            w["guard"] = {**cap, "planned": w["target_km"]}
-        for wo in w["workouts"]:
-            if run_factor != 1.0 and wo["type"] != "race":
-                if "steps" in wo:  # fewer reps, so the day, the note and the .fit all agree
-                    scale_session(wo, run_factor, s["paces"])
-                else:
-                    wo["km"] = _half(wo["km"] * run_factor)
-            # fuel practice on long runs of 90 minutes or more, from the km left after any trim
-            wo["fuel"] = fuel.long_run_note(wo["km"], wo.get("mp_km", 0), s["paces"]["long"]) \
-                if wo["type"] == "long" else None
-            wo["gels"] = len(fuel.gel_minutes(wo["km"] * s["paces"]["long"] / 60)) if wo["fuel"] else 0
-            moves.shift(wo, "run", moved)
-    moves.relocate(weeks)
-    # A day with two runs (after a move) is one day: both show its actual, the longer one gets the review.
-    planned: dict[date, float] = {}
-    lead: dict[date, dict] = {}
-    seen: dict[date, int] = {}
-    for wo in (wo for w in weeks for wo in w["workouts"] if not wo.get("skipped")):
-        wo["fit_n"] = seen.get(wo["date"], 0)  # its index for /workout/{day}.fit?n=
-        seen[wo["date"]] = wo["fit_n"] + 1
-        planned[wo["date"]] = planned.get(wo["date"], 0) + wo["km"]
-        if wo["date"] not in lead or wo["km"] > lead[wo["date"]]["km"]:
-            lead[wo["date"]] = wo
-    for w in weeks:
-        wk_actual = 0.0
-        for wo in w["workouts"]:
-            a = None if wo.get("skipped") else actual.get(wo["date"].isoformat())
-            day_km = planned.get(wo["date"], 0)
-            wo["actual_km"] = round(a["km"], 1) if a else None
-            wo["actual_pace"] = (a["seconds"] / a["km"]) if a and a["km"] else None
-            wo["compliance"] = round(100 * a["km"] / day_km) if a and day_km else None
-            wo["past"] = wo["date"] < t
-            detail = details.get(a["main"]["id"]) if a and lead.get(wo["date"]) is wo else None
-            wo["review"] = review.review(wo, a["main"], detail, s["paces"]) if detail else None
-        w["target_km"] = round(sum(wo["km"] for wo in w["workouts"] if not wo.get("skipped")), 1)
-        for i in range(7):
-            d = (w["start"] + timedelta(days=i)).isoformat()
-            if d in actual:
-                wk_actual += actual[d]["km"]
-        w["actual_km"] = round(wk_actual, 1)
-        attach_strength(w, s, eq, st, t, moved, weeks)
-        w["is_current"] = w["start"] <= t < w["start"] + timedelta(days=7)
-        w["is_past"] = w["start"] + timedelta(days=7) <= t
-    moves.relocate(weeks)  # strength sessions moved across Sunday, keeping their own week's prescription
-    race = race_date(s)
-    ticks = db.fuel_days()
-    for w in weeks:
-        for wo in w["workouts"]:
-            wo["fuelled"] = bool(wo["fuel"]) and wo["date"].isoformat() in ticks
-        for kind, item in [("run", wo) for wo in w["workouts"]] + [(x["key"], x) for x in w.get("strength", [])]:
-            item["done"] = (item.get("actual_km") is not None if kind == "run"
-                            else any(ex.get("log") for ex in item.get("exercises", [])))
-            item["movable"] = _movable(item, weeks, t, race)
-    return s, weeks
-
-
-def _movable(item: dict, weeks: list[dict], t: date, race: date) -> bool:
-    """From today on, not skipped, not done yet (a synced run or any strength log), and tomorrow is allowed."""
-    if item["date"] < t or item.get("skipped") or item.get("type") == "race" or item["done"]:
-        return False
-    return moves.can_move(item["date"], weeks, race)
-
-
-def ankle_state(t: date, weeks: list[dict], checkins: list[dict]) -> dict:
-    """Today's ankle and logging state, computed once per request from the stored facts."""
-    logs, checks, tests, snacks = db.logs(), db.checks(), db.tests(), db.snacks()
-    hop = ankle.hop_stage(t, tests, checks, logs, checkins, weeks)
-    by_ex: dict[str, list[dict]] = {}
-    for lg in logs:  # newest first, as db.logs() returns them
-        by_ex.setdefault(lg["exercise"], []).append(lg)
-    return {
-        "logs": logs, "checks": checks, "tests": tests, "snacks": snacks, "checkins": checkins,
-        "by_key": {(lg["date"], lg["exercise"]): lg for lg in logs},
-        "by_ex": by_ex,
-        "flag_until": ankle.flag_until(t, checks, logs, checkins, weeks),
-        "hop_stage": hop,
-        "balance_stage": ankle.balance_stage(t, snacks, tests, checks, hop, logs, checkins, weeks),
-        "restart": ankle.restart(t, logs, checks),
-        # before today, so logging the first lift doesn't cancel the time-off drop for the rest of the session
-        "last_any_log": next((date.fromisoformat(lg["date"]) for lg in logs if lg["date"] < t.isoformat()), None),
-    }
-
-
-def weight_range(weights: list[float]) -> dict | None:
-    """Min, max and an input step that lands on every available weight, or None for unloaded work."""
-    if not weights:
-        return None
-    lo = weights[0]
-    step = 0
-    for w in weights[1:]:
-        step = gcd(step, round((w - lo) * 100))
-    return {"min": lo, "max": weights[-1], "step": step / 100 if step else "any"}
-
-
-def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict | None = None,
-                    weeks: list[dict] | None = None) -> None:
-    """Strength sessions with suggestions and logs, and the ankle snacks, for one week."""
-    end = w["start"] + timedelta(days=6)
-    flag = st["flag_until"]
-
-    def flagged(day: date) -> bool:
-        """The flag is still up on `day`, in a week that isn't over."""
-        return flag is not None and day <= flag and end >= t
-
-    def on(key: str) -> date:
-        """The day a strength session actually falls on, after any move."""
-        planned = w["start"] + timedelta(days=DAYS.index(s["strength_days"][key]))
-        return (moved or {}).get((planned, key)) or planned
-
-    # A past session keeps the hop and balance stages it had on its day, so unlocking hops later doesn't
-    # rewrite it; today's and future sessions use today's stages.
-    a_day, b_day = on("A"), on("B")
-    hop_a, hop_b = (st["hop_stage"] if d >= t else ankle.hop_stage(d, st["tests"], st["checks"], st["logs"],
-                                                                     st["checkins"], weeks or [w])
-                    for d in (a_day, b_day))
-    balance = st["balance_stage"] if b_day >= t else ankle.balance_stage(
-        b_day, st["snacks"], st["tests"], st["checks"], hop_b, st["logs"], st["checkins"], weeks or [w])
-    q = next((wo for wo in w["workouts"] if "steps" in wo), None)
-    wed_bad = bool(q and q.get("review") and q["review"]["verdict"] == "bad")
-    ctx = {"factor": w["factor"], "wed_bad": wed_bad, "ankle_flag": flagged(a_day), "hop_stage": hop_a,
-           "balance_stage": balance, "restart": st["restart"], "days": s["strength_days"]}
-    w["strength"] = strength.sessions_for_week(w, eq, ctx)
-    pctx = {"phase": w["phase"], "cutback": w["phase"] == "Cutback", "factor": w["factor"],
-            "last_any_log": st["last_any_log"]}
-    for sess in w["strength"]:
-        moves.shift(sess, sess["key"], moved or {})
-        sess["day"] = sess["date"].strftime("%a")
-        day = sess["date"].isoformat()
-        pctx["ankle_flag"] = flagged(sess["date"])
-        for ex in sess["exercises"]:
-            history = st["by_ex"].get(ex["key"], [])
-            ex["suggestion"] = progression.suggest(ex, history, pctx, eq, today=t)
-            ex["log"] = st["by_key"].get((day, ex["key"]))
-            ex["last"] = next((lg for lg in history if lg["date"] < day), None)
-            ex["weights"] = weight_range(progression.available_weights(ex, eq))
-        # A past session you logged shows what you did; the rest (skipped, or added to the routine since) is
-        # listed apart. They can't be logged after the day, so they don't count against it.
-        logged = [ex for ex in sess["exercises"] if ex["log"]]
-        sess["not_logged"] = [ex for ex in sess["exercises"] if not ex["log"]] if logged and sess["date"] < t else []
-        if sess["not_logged"]:
-            sess["exercises"] = logged
-
-    items = ankle.BALANCE_STAGES[max(0, min(st["balance_stage"], len(ankle.BALANCE_STAGES) - 1))]
-    if w["phase"] == "Race week":
-        items = items[:2]
-    w["snack"] = {}
-    for name in s["ankle_days"]:
-        d = w["start"] + timedelta(days=DAYS.index(name))
-        if d > race_date(s):
-            continue
-        done = {x["item"] for x in st["snacks"] if x["date"] == d.isoformat()}
-        w["snack"][d] = {"date": d, "day": d.strftime("%a"), "stage": st["balance_stage"], "items": items,
-                         "done": done}
-    w["snack"] = dict(sorted(w["snack"].items()))
-    w["ankle_state"] = st
+    """Every page's settings and weeks: today's facts through the pure pipeline in view.py."""
+    return view.build_view(view.load_facts(), today())
 
 
 SYNC_PAGES = ("/", "/progress")  # the pages that sync when they open
 SYNC_GAP = timedelta(minutes=15)
-
-
-def _missing_runs(weeks: list[dict], t: date) -> list[date]:
-    """Days among yesterday and today with a planned run and nothing synced."""
-    days = {t - timedelta(days=1), t}
-    return sorted({wo["date"] for w in weeks for wo in w["workouts"]
-                   if wo["date"] in days and wo["km"] > 0 and not wo.get("skipped") and wo["actual_km"] is None})
 
 
 def _sync_due() -> bool:
@@ -395,14 +142,14 @@ def view_with_sync():
     Returns the view and the top line: a failed sync's reason, and which run is still missing."""
     s, weeks = build_view()
     t = today()
-    missing = _missing_runs(weeks, t)
+    missing = view.missing_runs(weeks, t)
     error = None
     if missing and os.environ.get("SMASHRUN_TOKEN") and _sync_due():
         db.set_meta("last_sync_try", datetime.now().isoformat(timespec="seconds"))
         msg = run_sync(quick=True)
         error = msg if msg.startswith("Sync failed") else None
         s, weeks = build_view()
-        missing = _missing_runs(weeks, t)
+        missing = view.missing_runs(weeks, t)
     names = ["Yesterday's" if d < t else "Today's" for d in missing]
     line = (f"{names[0]} run isn't in Smashrun yet." if len(names) == 1
             else "Yesterday's and today's runs aren't in Smashrun yet." if names else None)
@@ -412,83 +159,10 @@ def view_with_sync():
 @app.get("/")
 def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = "", prev: str = ""):
     s, weeks, auto_sync = view_with_sync()
-    t = today()
-    current = next((w for w in weeks if w["is_current"]), None)
-    upcoming = weeks[0] if t < weeks[0]["start"] else current
-    # last week, so a wrong check-in can still be changed once the week has rolled over
-    prev_week = weeks[upcoming["week"] - 2] if upcoming and upcoming["week"] > 1 else None
-    days_left = (race_date(s) - t).days
-    # the next run from today on, and any strength session today
-    next_run = next((wo for w in weeks for wo in w["workouts"]
-                     if wo["km"] > 0 and not wo.get("skipped")
-                     and (wo["date"] > t or (wo["date"] == t and wo["actual_km"] is None))), None)
-    if next_run:  # two runs on one day (after a Move anyway): show the main one
-        next_run = max((wo for w in weeks for wo in w["workouts"]
-                        if wo["date"] == next_run["date"] and wo["km"] > 0 and not wo.get("skipped")),
-                       key=lambda wo: wo["km"])
-    done = [wo for w in weeks for wo in w["workouts"] if wo.get("review") and wo["date"] <= t]
-    last_run = done[-1] if done else None
-    strength_sessions = [x for w in weeks for x in w.get("strength", []) if x["date"] == t and not x.get("skipped")]
-    strength_today = strength_sessions[0] if strength_sessions else None  # two only after a Move anyway
-    st = weeks[0]["ankle_state"]
-    snack_today = (upcoming or {}).get("snack", {}).get(t)
-    tests_due = bool(upcoming) and ankle.tests_due(upcoming, weeks, st["tests"])
-    test_keys = [k for k in ankle.TESTS if k in ankle.CORE_TESTS
-                 or (k == "pogo_trial" and upcoming and upcoming["week"] == 1)
-                 or (k in ("single_hop", "triple_hop") and (st["hop_stage"] or 0) >= 2)]
-    week_end = upcoming["start"] + timedelta(days=6) if upcoming else t
-    tests_this_week = {x["test"]: x for x in st["tests"]
-                       if upcoming and upcoming["start"].isoformat() <= x["date"] <= week_end.isoformat()}
-    move_warning = _move_warning(weeks, confirm, _day(on), _day(orig))
-    # last week's summary on Monday and Tuesday
-    last_summary = None
-    if t.weekday() < 2:
-        done_weeks = progress.summaries(weeks, s, st, db.results(), t)
-        if done_weeks and done_weeks[0]["end"] == t - timedelta(days=t.weekday() + 1):
-            last_summary = done_weeks[0]
     expires = smashrun.token_expiry() if os.environ.get("SMASHRUN_TOKEN") else None
-    left = (expires - t).days if expires else None
-    token_warning = {"expires": expires, "days": left} if left is not None and left <= smashrun.TOKEN_WARN_DAYS else None
-    profile = {
-        "planned": [w["target_km"] for w in weeks],
-        "actual": [w["actual_km"] if (w["is_past"] or w["is_current"]) else None for w in weeks],
-        "current": next((i for i, w in enumerate(weeks) if w["is_current"]), None),
-        "max": max(w["target_km"] for w in weeks),
-    }
-    return templates.TemplateResponse(
-        request,
-        "index.html",
-        {
-            "s": s,
-            "week": upcoming,
-            "prev_week": prev_week,
-            "prev_open": prev == "1",
-            "days_left": days_left,
-            "weeks_left": days_left // 7,
-            "profile": profile,
-            "today": t,
-            "race_day": race_date(s),
-            "next_run": next_run,
-            "last_run": last_run,
-            "strength_today": strength_today,
-            "strength_session": strength_today,
-            "strength_sessions": strength_sessions,
-            "snack_today": snack_today,
-            "morning_check": ankle.morning_check_due(t, st["logs"], st["checks"]),
-            "tests_due": tests_due,
-            "tests": {k: {**ankle.TESTS[k], "logged": tests_this_week.get(k)} for k in test_keys},
-            "ankle_flag": st["flag_until"],
-            "hop_stage": st["hop_stage"],
-            "injured_side": s["injured_side"],
-            "move_warning": move_warning,
-            "last_summary": last_summary,
-            "token_warning": token_warning,
-            "auto_sync": auto_sync,
-            "msg": msg,
-            "paces": s["paces"],
-            "goal": s["goal_time"],
-        },
-    )
+    page = view.dashboard(s, weeks, today(), db.results(), expires, confirm, _day(on), _day(orig))
+    return templates.TemplateResponse(request, "index.html",
+                                      {**page, "auto_sync": auto_sync, "msg": msg, "prev_open": prev == "1"})
 
 
 @app.get("/progress")
@@ -761,7 +435,7 @@ def goal_change(goal: str = Form("")):
         return RedirectResponse(f"/progress?{urlencode({'msg': 'Not changed: that is not a marathon time.'})}#verdict",
                                 status_code=303)
     back = seconds == parse_time(load_settings()["goal_time"])
-    db.save_goal(today().isoformat(), GOAL_SETTINGS if back else fmt_time(seconds))
+    db.save_goal(today().isoformat(), view.GOAL_SETTINGS if back else fmt_time(seconds))
     msg = f"Goal changed to {fmt_time(seconds)[:-3]}. The plan now follows it."
     return RedirectResponse(f"/progress?{urlencode({'msg': msg})}#verdict", status_code=303)
 
@@ -809,40 +483,18 @@ def result_delete(day: str = Form("", alias="date")):
     return _back("paces", "Result deleted.")
 
 
-SESSIONS = {"run", "A", "B"}
-
-
-def _session_at(weeks: list[dict], day: date, session: str, orig: date | None = None) -> dict | None:
-    """The non-skipped session of this kind on `day`; `orig` picks one when two runs share the day."""
-    return next((item for kind, item in moves.day_items(weeks, day)
-                 if kind == session and (orig is None or item["orig_date"] == orig)), None)
-
-
-def _move_warning(weeks: list[dict], session: str, day: date | None, orig: date | None) -> dict | None:
-    """The clash warning to show after a Move to tomorrow, if that clash still holds."""
-    if session not in SESSIONS or day is None:
-        return None
-    item = _session_at(weeks, day, session, orig)
-    blocker = moves.clash(weeks, session, day) if item else None
-    if blocker is None:
-        return None
-    kind = "run" if "type" in blocker else blocker["key"]
-    return {"session": session, "date": day, "orig": item["orig_date"], "name": moves.session_name(session, item),
-            "blocker": moves.session_name(kind, blocker), "blocker_day": blocker["date"]}
-
-
 @app.post("/move")
 def move(day: str = Form("", alias="date"), session: str = Form(""), confirm: str = Form(""),
          orig: str = Form("")):
     d = _day(day)
-    if d is None or session not in SESSIONS:
+    if d is None or session not in view.SESSIONS:
         return _back("week", "Not moved: that isn't a session.")
     if confirm not in ("", "skip", "move"):
         return _back("week", "Not moved: that isn't a choice.")
     if d < today():
         return _back("week", "Not moved: that day has passed.")
     s, weeks = build_view()
-    item = _session_at(weeks, d, session, _day(orig))
+    item = view.session_at(weeks, d, session, _day(orig))
     if item is None:
         return _back("week", "Not moved: there's no such session that day.")
     if not item["movable"]:
@@ -858,7 +510,7 @@ def move(day: str = Form("", alias="date"), session: str = Form(""), confirm: st
 @app.post("/move/undo")
 def move_undo(day: str = Form("", alias="date"), session: str = Form("")):
     d = _day(day)
-    if d is None or session not in SESSIONS:
+    if d is None or session not in view.SESSIONS:
         return _back("week", "Not undone: that isn't a session.")
     s, weeks = build_view()
     items = [wo for w in weeks for wo in w["workouts"]] if session == "run" else \

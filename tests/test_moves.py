@@ -12,7 +12,7 @@ D0 = date(2026, 10, 19)  # plan week 1, a Monday
 @pytest.fixture
 def weeks():
     ws = generate(load_settings(), D0)
-    for w in ws:  # strength B on Tuesday and A on Thursday, as main.attach_strength builds them
+    for w in ws:  # strength B on Tuesday and A on Thursday, as view.attach_strength builds them
         w["strength"] = [{"key": "B", "date": w["start"] + timedelta(days=1)},
                          {"key": "A", "date": w["start"] + timedelta(days=3)}]
     return ws
