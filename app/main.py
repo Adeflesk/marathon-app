@@ -157,10 +157,12 @@ def view_with_sync():
 
 
 @app.get("/")
-def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = "", prev: str = ""):
+def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = "", prev: str = "",
+              by: str = "1"):
     s, weeks, auto_sync = view_with_sync()
     expires = smashrun.token_expiry() if os.environ.get("SMASHRUN_TOKEN") else None
-    page = view.dashboard(s, weeks, today(), db.results(), expires, confirm, _day(on), _day(orig))
+    page = view.dashboard(s, weeks, today(), db.results(), expires, confirm, _day(on), _day(orig),
+                          -1 if by == "-1" else 1)
     return templates.TemplateResponse(request, "index.html",
                                       {**page, "auto_sync": auto_sync, "msg": msg, "prev_open": prev == "1"})
 
@@ -485,24 +487,27 @@ def result_delete(day: str = Form("", alias="date")):
 
 @app.post("/move")
 def move(day: str = Form("", alias="date"), session: str = Form(""), confirm: str = Form(""),
-         orig: str = Form("")):
+         orig: str = Form(""), by: str = Form("1")):
+    """Move a session to tomorrow (`by` 1) or to the day before (`by` -1), or skip it after a clash warning."""
     d = _day(day)
     if d is None or session not in view.SESSIONS:
         return _back("week", "Not moved: that isn't a session.")
-    if confirm not in ("", "skip", "move"):
+    if confirm not in ("", "skip", "move") or by not in ("1", "-1"):
         return _back("week", "Not moved: that isn't a choice.")
+    step = int(by)
     if d < today():
         return _back("week", "Not moved: that day has passed.")
     s, weeks = build_view()
     item = view.session_at(weeks, d, session, _day(orig))
     if item is None:
         return _back("week", "Not moved: there's no such session that day.")
-    if not item["movable"]:
-        return _back("week", "Not moved: it's done already, or tomorrow is race day or past the plan.")
-    if not confirm and moves.clash(weeks, session, d) is not None:
-        q = urlencode({"confirm": session, "on": d.isoformat(), "orig": item["orig_date"].isoformat()})
+    if not item["movable" if step == 1 else "movable_back"]:
+        return _back("week", "Not moved: it's done already, or tomorrow is race day or past the plan." if step == 1
+                     else "Not moved: it's done already, or the day before has passed or is before the plan.")
+    if not confirm and moves.clash(weeks, session, d, step) is not None:
+        q = urlencode({"confirm": session, "on": d.isoformat(), "orig": item["orig_date"].isoformat(), "by": by})
         return RedirectResponse(f"/?{q}#move", status_code=303)
-    new = None if confirm == "skip" else (d + timedelta(days=1)).isoformat()
+    new = None if confirm == "skip" else (d + timedelta(days=step)).isoformat()
     db.save_move(item["orig_date"].isoformat(), session, new)
     return _back("week")
 

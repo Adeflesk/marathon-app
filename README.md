@@ -149,9 +149,10 @@ To try numbers without saving them: `python -m app.pace_engine 10 52:30`.
 
 Life gets in the way. Any run or strength session from today on has a **Move to tomorrow** button: on
 today's card, and in the week list. The session moves one day, and its watch file, logging and run review move
-with it. Tap it again to push it another day.
+with it. Tap it again to push it another day. Sessions from tomorrow on also have **Move a day earlier**, for
+when you'll be away at the end of the week: move Saturday's run to Friday first, then Sunday's to Saturday.
 
-If tomorrow already has a long run or a speed session, or you're moving a run onto another run day, or a
+If the new day already has a long run or a speed session, or you're moving a run onto another run day, or a
 strength session onto the other strength day, the app warns you and suggests skipping the missed session
 instead of stacking the two. **Skip it** marks it skipped: it comes off the week's planned km and doesn't count
 as missed. **Move anyway** moves it regardless. Moved and skipped sessions show **Undo**. A session you've

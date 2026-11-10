@@ -175,6 +175,7 @@
       <input type="hidden" name="orig" value="{{ mw.orig.isoformat() }}">
       <input type="hidden" name="session" value="{{ mw.session }}">
       <input type="hidden" name="confirm" value="{{ value }}">
+      <input type="hidden" name="by" value="{{ mw.by }}">
       <button class="button{{ ' quiet' if value == 'move' }}" type="submit">{{ word }}</button>
     </form>
     {% endfor %}
@@ -207,7 +208,7 @@
   {% endif %}
   <div class="actions">
     <a class="button" href="/workout/{{ next_run.date.isoformat() }}.fit?n={{ next_run.fit_n }}">Download for the watch</a>
-    {% if next_run.movable %}{{ ui.move_form(next_run, "run", "button quiet") }}{% endif %}
+    {% if next_run.movable or next_run.movable_back %}{{ ui.move_form(next_run, "run", "button quiet") }}{% endif %}
   </div>
   {{ ui.moved_note(next_run, "run") }}
 </section>
@@ -298,8 +299,8 @@
         <form method="post" action="/fuel" class="inline"><input type="hidden" name="date" value="{{ w.date.isoformat() }}">
           <button type="submit" class="linkish">{{ 'Fuelled ✓ (undo)' if w.fuelled else 'Fuelled as planned' }}</button></form>
         {%- endif %}</span>{% endif %}
-      {% if w.skipped or w.moved_from or w.movable %}
-      <span class="moves">{{ ui.moved_note(w, "run") }}{% if w.movable %}{{ ui.move_form(w, "run") }}{% endif %}</span>
+      {% if w.skipped or w.moved_from or w.movable or w.movable_back %}
+      <span class="moves">{{ ui.moved_note(w, "run") }}{{ ui.move_form(w, "run") }}</span>
       {% endif %}
     </li>
     {% endfor %}
@@ -308,7 +309,7 @@
   <ul class="strength-days">
     {% for x in week.strength %}
     <li><span{{ ' class="mute"' if x.skipped }}><strong>{{ x.date.strftime('%A') }}:</strong> Strength {{ x.key }}</span>
-      {{ ui.moved_note(x, x.key) }}{% if x.movable and x.date != today %}{{ ui.move_form(x, x.key) }}{% endif %}</li>
+      {{ ui.moved_note(x, x.key) }}{{ ui.move_form(x, x.key, forward=x.date != today) }}</li>
     {% endfor %}
   </ul>
   <p class="mute" style="margin-top:4px"><a href="/strength?week={{ week.week }}">See the strength sessions</a>.</p>

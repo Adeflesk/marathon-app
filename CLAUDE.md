@@ -82,8 +82,10 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   - Manages `flag_until`: raises 7-day ankle flag on morning check "worse than usual", ankle pain ≥ 3 on ankle items, or weekly check-in pain ≥ 3.
   - Identifies when morning check is due and when readiness tests are due.
 - `app/moves.py` — pure: applies the user's moved/skipped sessions to the generated plan. `shift()` marks an
-  item (`orig_date`, then `moved_from` + new `date`, or `skipped`); `relocate()` puts items moved past Sunday
-  into the next week; `clash()` holds the warning rules; `can_move()` stops at race day and the plan's end.
+  item (`orig_date`, then `moved_from` + new `date`, or `skipped`); `relocate()` puts items moved out of their week
+  (past Sunday or before Monday) into the week holding their new date; `clash()` holds the warning rules and
+  `can_move()` stops at race day and the plan's ends, both taking `by` (1 = tomorrow, -1 = a day earlier, never
+  into the past). Items carry `movable` and `movable_back`; `/move` takes `by`.
 - `app/view.py` — builds every page's view; a functional core with one read at the edge.
   - `load_facts()` is the only storage read: every table, `settings.json` and the equipment, as a frozen `Facts`.
   - `build_view(facts, today)` is pure (it deep-copies the settings; tested without a database in

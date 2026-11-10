@@ -198,13 +198,17 @@ def mark_done_and_movable(weeks: list[dict], s: dict, f: Facts, t: date) -> None
             item["done"] = (item.get("actual_km") is not None if kind == "run"
                             else any(ex.get("log") for ex in item.get("exercises", [])))
             item["movable"] = _movable(item, weeks, t, race)
+            item["movable_back"] = _movable(item, weeks, t, race, by=-1)
 
 
-def _movable(item: dict, weeks: list[dict], t: date, race: date) -> bool:
-    """From today on, not skipped, not done yet (a synced run or any strength log), and tomorrow is allowed."""
+def _movable(item: dict, weeks: list[dict], t: date, race: date, by: int = 1) -> bool:
+    """From today on, not skipped, not done yet (a synced run or any strength log), and the new day is allowed:
+    tomorrow for `by` 1; for -1 the day before, which mustn't have passed."""
     if item["date"] < t or item.get("skipped") or item.get("type") == "race" or item["done"]:
         return False
-    return moves.can_move(item["date"], weeks, race)
+    if item["date"] + timedelta(days=by) < t:
+        return False
+    return moves.can_move(item["date"], weeks, race, by)
 
 
 # --- ankle and strength ---
@@ -319,23 +323,23 @@ def session_at(weeks: list[dict], day: date, session: str, orig: date | None = N
                  if kind == session and (orig is None or item["orig_date"] == orig)), None)
 
 
-def move_warning(weeks: list[dict], session: str, day: date | None, orig: date | None) -> dict | None:
-    """The clash warning to show after a Move to tomorrow, if that clash still holds."""
+def move_warning(weeks: list[dict], session: str, day: date | None, orig: date | None, by: int = 1) -> dict | None:
+    """The clash warning to show after a move (`by` 1 = tomorrow, -1 = a day earlier), if that clash still holds."""
     if session not in SESSIONS or day is None:
         return None
     item = session_at(weeks, day, session, orig)
-    blocker = moves.clash(weeks, session, day) if item else None
+    blocker = moves.clash(weeks, session, day, by) if item else None
     if blocker is None:
         return None
     kind = "run" if "type" in blocker else blocker["key"]
     return {"session": session, "date": day, "orig": item["orig_date"], "name": moves.session_name(session, item),
-            "blocker": moves.session_name(kind, blocker), "blocker_day": blocker["date"]}
+            "blocker": moves.session_name(kind, blocker), "blocker_day": blocker["date"], "by": by}
 
 
 # --- page data ---
 
 def dashboard(s: dict, weeks: list[dict], t: date, results: list[dict], token_expires: date | None,
-              confirm: str = "", on: date | None = None, orig: date | None = None) -> dict:
+              confirm: str = "", on: date | None = None, orig: date | None = None, by: int = 1) -> dict:
     """What This week shows, from a built view. `token_expires` is None when there's no token or no issue date;
     `confirm`, `on` and `orig` name a move waiting on a clash warning."""
     current = next((w for w in weeks if w["is_current"]), None)
@@ -358,7 +362,7 @@ def dashboard(s: dict, weeks: list[dict], t: date, results: list[dict], token_ex
         "tests": ankle_tests(upcoming, st, t),
         "ankle_flag": st["flag_until"],
         "hop_stage": st["hop_stage"],
-        "move_warning": move_warning(weeks, confirm, on, orig),
+        "move_warning": move_warning(weeks, confirm, on, orig, by),
         "last_summary": last_summary(weeks, s, st, results, t),
         "token_warning": {"expires": token_expires, "days": left} if left is not None and left <= smashrun.TOKEN_WARN_DAYS
         else None,
