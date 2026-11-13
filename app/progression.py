@@ -9,7 +9,7 @@ Overrides only ever cap a suggestion; nothing here raises load in a reduced week
 """
 from datetime import date
 
-from .strength import EXERCISES, barbell_loads
+from .strength import EXERCISES, barbell_loads, trimmed_for_recovery
 
 # Light starting points for the first-session warm-up (Ruling R2), snapped to what's available.
 WARMUP_START = {"barbell": [20, 30, 40], "dumbbell": [5, 7.5, 10], "kettlebell": [12]}
@@ -247,8 +247,7 @@ def _override(ex, eq, ctx, last, last_w, last_rung, res):
     if phase.startswith("Taper"):
         why.append("taper")
     if factor < 1.0:
-        recovery = ctx.get("recovery") and ctx.get("checkin_factor", factor) >= 1.0
-        why.append("the recovery trim" if recovery else "last week's check-in")
+        why.append("the recovery trim" if trimmed_for_recovery(ctx) else "last week's check-in")
     if phase == "Peak" and ex.get("role") == "main":
         why.append("Peak holds the main lifts")
     if ctx.get("ankle_flag") and ex.get("ankle"):

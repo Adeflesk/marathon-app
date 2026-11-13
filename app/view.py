@@ -138,10 +138,6 @@ def _run_day(wo: dict, moved: dict) -> date | None:
     return moved[key] if key in moved else wo["date"]
 
 
-def _reps(wo: dict) -> int:
-    return sum(st["repeat"] for st in wo.get("steps", []) if "repeat" in st)
-
-
 def trim_days(weeks: list[dict], trims: list[dict]) -> dict[int, date]:
     """Week number -> the day a recovery trim was taken in it (the earliest, if two). Never a Race week."""
     out: dict[int, date] = {}
@@ -153,14 +149,20 @@ def trim_days(weeks: list[dict], trims: list[dict]) -> dict[int, date]:
     return out
 
 
-def easy_runs(weeks: list[dict], trims: list[dict], moved: dict) -> set[int]:
+def _not_run(day: date | None, actual: dict) -> bool:
+    """A day the run is still to come on: not skipped, and nothing synced on it yet."""
+    return day is not None and day.isoformat() not in actual
+
+
+def easy_runs(weeks: list[dict], trims: list[dict], moved: dict, actual: dict) -> set[int]:
     """The runs "make the next run easy" applies to (by id): for each, the first run on or after its day that
-    isn't skipped or the race and has km, unless that run is in Race week."""
+    isn't skipped, done (synced) or the race and has km, unless that run is in Race week."""
     out = set()
     for tr in (tr for tr in trims if tr["kind"] == "easy"):
         d = date.fromisoformat(tr["date"])
-        cands = [(_run_day(wo, moved), -wo["km"], w, wo) for w in weeks for wo in w["workouts"]
-                 if wo["type"] != "race" and wo["km"] > 0 and (_run_day(wo, moved) or date.min) >= d]
+        cands = [(day, -wo["km"], w, wo) for w in weeks for wo in w["workouts"]
+                 for day in [_run_day(wo, moved)]
+                 if wo["type"] != "race" and wo["km"] > 0 and _not_run(day, actual) and day >= d]
         if cands:
             _, _, w, wo = min(cands, key=lambda c: c[:2])
             if w["phase"] != "Race week":
@@ -182,7 +184,7 @@ def scale_and_shift_runs(weeks: list[dict], s: dict, f: Facts, t: date, moved: d
     follows the check-in and the trim."""
     caps, synced = volume_guard(weeks, f.actual, f.checkins, t, s["base_weekly_km"], f.last_sync)
     trimmed = trim_days(weeks, f.trims)
-    easy = easy_runs(weeks, f.trims, moved)
+    easy = easy_runs(weeks, f.trims, moved, f.actual)
     for w in weeks:
         factor = feedback_factor(f.checkins.get(w["week"] - 1))
         w["factor"] = factor
@@ -198,24 +200,23 @@ def scale_and_shift_runs(weeks: list[dict], s: dict, f: Facts, t: date, moved: d
         rep_off = trim_from is not None  # the trim's rep is still to come off the next quality session
         for wo in w["workouts"]:
             day = _run_day(wo, moved)
-            in_trim = trim_from is not None and day is not None and day >= trim_from
-            wo_factor = min(run_factor, RECOVERY_FACTOR) if in_trim else run_factor
+            # the trim reaches runs still to come from its day on; a day already run stays as it was planned
+            in_trim = trim_from is not None and _not_run(day, f.actual) and day >= trim_from
+            quality = in_trim and rep_off and "steps" in wo and wo["type"] != "strides"
+            # the trim's session keeps the check-in's (or guard's) scaling and just loses one rep, so its rep
+            # length and cool-down match the session without the trim
+            wo_factor = min(run_factor, RECOVERY_FACTOR) if in_trim and not quality else run_factor
             if id(wo) in easy:  # replaces the run, never below what a 0.8 check-in would do
                 _make_easy(wo, min(RECOVERY_EASY, wo_factor))
-            elif wo_factor != 1.0 and wo["type"] != "race":
-                if "steps" in wo:  # fewer reps, so the day, the note and the .fit all agree
-                    quality = in_trim and rep_off and wo["type"] != "strides"
-                    if quality:  # the reps without the trim, to check the trim took one off
-                        alone = copy.deepcopy(wo)
-                        if run_factor != 1.0:
-                            scale_session(alone, run_factor, s["paces"])
-                    scale_session(wo, wo_factor, s["paces"])
-                    if quality:
-                        rep_off = False
-                        if _reps(wo) >= _reps(alone):
-                            drop_rep(wo, s["paces"])
-                else:
-                    wo["km"] = _half(wo["km"] * wo_factor)
+            else:
+                if wo_factor != 1.0 and wo["type"] != "race":
+                    if "steps" in wo:  # fewer reps, so the day, the note and the .fit all agree
+                        scale_session(wo, wo_factor, s["paces"])
+                    else:
+                        wo["km"] = _half(wo["km"] * wo_factor)
+                if quality:
+                    rep_off = False
+                    drop_rep(wo, s["paces"])
             # fuel practice on long runs of 90 minutes or more, from the km left after any trim
             wo["fuel"] = fuel.long_run_note(wo["km"], wo.get("mp_km", 0), s["paces"]["long"]) \
                 if wo["type"] == "long" else None

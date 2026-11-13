@@ -338,6 +338,11 @@ def _hops(phase: str, stage: int) -> dict:
 RECOVERY_NOTE = "Trimmed for recovery: low HRV, confirmed by your last run."
 
 
+def trimmed_for_recovery(ctx: dict) -> bool:
+    """The recovery trim, not the check-in, is why this session (or suggestion) is trimmed."""
+    return bool(ctx.get("recovery")) and ctx.get("checkin_factor", ctx.get("factor", 1.0)) >= 1.0
+
+
 def _session(key: str, week: dict, eq: dict, ctx: dict, day) -> dict:
     phase = _phase_key(week)
     table = ROLE_RX["Rebuild" if ctx.get("restart") and phase != "Taper 2" else phase]
@@ -346,8 +351,7 @@ def _session(key: str, week: dict, eq: dict, ctx: dict, day) -> dict:
     trims = []
     if factor < 1.0:
         # the recovery trim sets factor 0.9 too; its own note shows when the check-in alone wouldn't trim
-        recovery = ctx.get("recovery") and ctx.get("checkin_factor", factor) >= 1.0
-        trims.append(RECOVERY_NOTE if recovery else "Trimmed because of last week's check-in.")
+        trims.append(RECOVERY_NOTE if trimmed_for_recovery(ctx) else "Trimmed because of last week's check-in.")
     if key == "A" and ctx.get("wed_bad"):
         trims.append("Wednesday's session was hard, so the main lifts lose a set and effort is capped.")
     if key == "A" and ctx.get("ankle_flag"):

@@ -75,6 +75,49 @@ def test_trim_drops_a_rep_never_below_two():
     assert reps(plain) == 2 and reps(trimmed) == 2
 
 
+def _minus_one(steps: list) -> list:
+    """The steps with one rep off the first repeat block that has more than two."""
+    out = copy.deepcopy(steps)
+    block = next((st for st in out if "repeat" in st and st["repeat"] > 2), None)
+    if block:
+        block["repeat"] -= 1
+    return out
+
+
+@pytest.mark.parametrize("tired", [False, True])
+def test_trimmed_session_is_the_untrimmed_one_minus_one_rep(tired):
+    """Same rep length, same cool-down, one rep fewer (a 2-rep or `specific` session comes through as it was)."""
+    seen_same, dropped = set(), 0
+    for w in view.build_view(facts(), MON_W8)[1]:
+        if w["phase"] in ("Rebuild", "Race week"):
+            continue
+        n = w["week"]
+        checkins = {n - 1: {"week": n - 1, "feel": 2, "pain": 0, "note": ""}} if tired else {}
+        plain = next(wo for wo in weeks(w["start"], checkins=checkins)[n - 1]["workouts"] if "steps" in wo)
+        got = next(wo for wo in weeks(w["start"], checkins=checkins, trims=[trim(w["start"])])[n - 1]["workouts"]
+                   if "steps" in wo)
+        assert got["steps"] == _minus_one(plain["steps"]), n
+        assert got["km"] <= plain["km"]
+        dropped += got["steps"] != plain["steps"]
+        if got["steps"] == plain["steps"]:
+            seen_same.add(plain["type"])
+            assert got["km"] == plain["km"] and got["note"] == plain["note"]
+    assert {"specific", "strength"} <= seen_same  # Peak's MP blocks and the 2-rep taper session
+    assert dropped >= 8
+
+
+def test_a_run_already_done_today_is_left_alone():
+    wed, sat = date(2026, 12, 9), date(2026, 12, 12)
+    done = {wed.isoformat(): {"km": 7.5, "seconds": 2700, "hr": [], "main": {"id": 9, "km": 7.5, "seconds": 2700}}}
+    plain = by_day(weeks(wed, actual=done)[7])
+    easy = by_day(weeks(wed, actual=done, trims=[trim(wed, "easy")])[7])
+    assert easy[wed]["type"] == "threshold" and easy[wed]["steps"] == plain[wed]["steps"]
+    assert (easy[sat]["type"], easy[sat]["km"]) == ("easy", _half(plain[sat]["km"] * 0.8))
+    trimmed = by_day(weeks(wed, actual=done, trims=[trim(wed)])[7])
+    assert trimmed[wed]["steps"] == plain[wed]["steps"] and trimmed[wed]["km"] == plain[wed]["km"]
+    assert trimmed[sat]["km"] == _half(plain[sat]["km"] * 0.9)  # the rest of the week is still trimmed
+
+
 def test_trim_ends_sunday():
     plain = weeks()
     trimmed = weeks(trims=[trim(TUE_W8)])
@@ -98,11 +141,10 @@ def test_easy_replaces_next_run():
     w = by_day(weeks(trims=[trim(TUE_W8, "easy")])[7])
     mon, wed, sat, sun = sorted(plain)
     assert plain[wed]["type"] == "threshold"
-    assert w[wed]["type"] == "easy" and w[wed]["pace"] == "easy" and "steps" not in w[wed]
-    assert w[wed]["km"] == _half(plain[wed]["km"] * 0.8)
+    assert (w[wed]["type"], w[wed]["km"], w[wed]["pace"]) == ("easy", _half(plain[wed]["km"] * 0.8), "easy")
+    assert "steps" not in w[wed] and w[wed]["day"] == "Wed"
     assert w[wed]["note"] == "Easy. If the ankle complains, stop and walk home."
-    assert w[wed]["day"] == "Wed"
-    assert w[sat] == plain[sat] or w[sat]["km"] == plain[sat]["km"]  # only the next run changes
+    assert (w[sat]["type"], w[sat]["km"]) == (plain[sat]["type"], plain[sat]["km"])  # only the next run changes
     # a long run loses its MP finish
     sat_d = date(2026, 12, 19)  # week 9's Saturday; the long run is next after it
     w9 = by_day(weeks(sat_d, trims=[trim(sat_d + timedelta(days=1), "easy")])[8])
