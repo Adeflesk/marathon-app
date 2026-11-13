@@ -123,6 +123,10 @@ def today() -> date:
     return date.today()
 
 
+def now() -> datetime:
+    return datetime.now()
+
+
 def build_view():
     """Every page's settings and weeks: today's facts through the pure pipeline in view.py."""
     return view.build_view(view.load_facts(), today())
@@ -130,6 +134,7 @@ def build_view():
 
 SYNC_PAGES = ("/", "/progress")  # the pages that sync when they open
 SYNC_GAP = timedelta(minutes=15)
+WELLNESS_UNTIL = 12  # local hour: before it, a missing row or HRV for today also triggers the sync on open
 
 
 def _sync_due() -> bool:
@@ -139,13 +144,16 @@ def _sync_due() -> bool:
 
 
 def view_with_sync():
-    """build_view, after a sync when a run from yesterday or today isn't in yet (at most every 15 minutes).
+    """build_view, after a sync when a run from yesterday or today isn't in yet, or before noon when today's
+    wellness row or its HRV isn't (at most every 15 minutes).
     Returns the view and the top line: a failed sync's reason, and which run is still missing."""
     s, weeks = build_view()
     t = today()
     missing = view.missing_runs(weeks, t)
     error = None
-    no_wellness = not any(w["date"] == t.isoformat() for w in db.wellness())
+    row = next((w for w in db.wellness() if w["date"] == t.isoformat()), None)
+    # last night's HRV can land after resting HR, so the morning keeps asking; after midday only a run triggers
+    no_wellness = now().hour < WELLNESS_UNTIL and (row is None or row.get("hrv_night") is None)
     if (missing or no_wellness) and os.environ.get("GARMIN_API_KEY") and _sync_due():
         db.set_meta("last_sync_try", datetime.now().isoformat(timespec="seconds"))
         msg = run_sync(quick=True)

@@ -108,7 +108,8 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
     `ankle_tests()`, `last_summary()`, `profile()`, the token warning); its route only adds the message and sync line.
 - `app/main.py` — the shell: routes, the auth and same-origin middlewares, Jinja filters, and `build_view()`,
   which is `view.build_view(view.load_facts(), today())` (tests patch `main.today`). This week and Progress go
-  through `view_with_sync()`, which syncs first when a run from yesterday or today is missing and neither
+  through `view_with_sync()`, which syncs first when a run from yesterday or today is missing, or before 12:00
+  (`main.now()`) when today's wellness row or its `hrv_night` is missing, and neither
   `last_sync` nor `last_sync_try` in `meta` is under 15 minutes old (only with `GARMIN_API_KEY`; a quick sync,
   `garmin_sync.QUICK`: details for the newest 4 runs, 3 days of wellness, 8 s timeout, while Sync fetches the rest).
   Routes: `/`, `/plan`, `/progress`, `/race`, `/goal` (POST), `/fuel` (POST, toggles the tick on a done long run with a note), `/strength`, `/equipment` (GET/POST), `/workout/{date}.fit?n=`,

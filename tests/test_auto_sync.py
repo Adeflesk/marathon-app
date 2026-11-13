@@ -22,13 +22,14 @@ def synced(day, km=10):
                   (day.isoformat(), km, int(km * 400), 140))
 
 
-def wellness(day):
+def wellness(day, hrv=48.0):
     with db.conn() as c:
-        c.execute("INSERT OR REPLACE INTO wellness (date, rhr) VALUES (?, ?)", (day.isoformat(), 50))
+        c.execute("INSERT OR REPLACE INTO wellness (date, rhr, hrv_night) VALUES (?, ?, ?)", (day.isoformat(), 50, hrv))
 
 
-def on(monkeypatch, day):
+def on(monkeypatch, day, hour=9):
     monkeypatch.setattr(main, "today", lambda: day)
+    monkeypatch.setattr(main, "now", lambda: datetime.combine(day, datetime.min.time()).replace(hour=hour))
 
 
 class FakeSync:
@@ -167,3 +168,39 @@ def test_missing_wellness_today_syncs(client, fake):
     db.set_meta("last_sync", (datetime.now() - timedelta(minutes=16)).isoformat(timespec="seconds"))
     client.get("/")
     assert fake.calls == 1  # today's wellness is in and so are the runs
+
+
+def test_rhr_only_row_syncs_before_noon_not_after(client, fake, monkeypatch):
+    """Garmin has resting HR early but HRV only once the watch has sent last night's: ask again until midday."""
+    synced(SUNDAY)
+    synced(SUNDAY - timedelta(days=1))
+    wellness(SUNDAY, hrv=None)
+    on(monkeypatch, SUNDAY, hour=11)
+    client.get("/")
+    assert fake.calls == 1
+    db.set_meta("last_sync", (datetime.now() - timedelta(minutes=16)).isoformat(timespec="seconds"))
+    on(monkeypatch, SUNDAY, hour=12)
+    client.get("/")
+    assert fake.calls == 1
+
+
+def test_after_noon_only_a_missing_run_syncs(client, fake, monkeypatch):
+    synced(SUNDAY)
+    synced(SUNDAY - timedelta(days=1))
+    with db.conn() as c:
+        c.execute("DELETE FROM wellness")
+    on(monkeypatch, SUNDAY, hour=15)
+    client.get("/")
+    assert fake.calls == 0
+    with db.conn() as c:
+        c.execute("DELETE FROM activities WHERE date = ?", (SUNDAY.isoformat(),))
+    client.get("/")
+    assert fake.calls == 1
+
+
+def test_hrv_in_no_sync(client, fake):
+    synced(SUNDAY)
+    synced(SUNDAY - timedelta(days=1))
+    wellness(SUNDAY, hrv=51.0)
+    client.get("/")
+    assert fake.calls == 0
