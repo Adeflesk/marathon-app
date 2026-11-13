@@ -2,7 +2,7 @@
 {% set rc = recovery %}
 {% set last = rc.last if rc else none %}
 {% set shown = last and (last.hrv_night is not none or last.hrv_week_avg is not none or last.rhr is not none or last.sleep_s is not none or last.stress_avg is not none or last.weight_kg is not none) %}
-{% if shown %}
+{% if shown or (rc and rc.phase != "none") %}
 <section class="stack" id="recovery" aria-labelledby="recovery-h" style="margin-top:12px">
   {% if rc.phase in ("advice", "firm") %}
   <div class="notice stack" role="alert">

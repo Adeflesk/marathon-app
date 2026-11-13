@@ -167,6 +167,16 @@ def test_weight_only_row_has_no_empty_paragraph(client):
     r = client.get("/")
     assert r.status_code == 200 and client.get("/progress").status_code == 200
     panel = r.text.split('id="recovery"')[1].split("</section>")[0]
-    assert "72.4 kg" in panel and "<p>\n  </p>" not in panel and "<p>\s*</p>" not in panel
+    assert "72.4 kg" in panel
     import re
     assert not re.search(r"<p>\s*</p>", panel)
+
+
+@pytest.mark.parametrize("phase, offer, text", [("advice", "trim", "Take the trim"),
+                                                ("firm", "easy", "Make the next run easy")])
+def test_open_episode_shows_card_when_latest_row_is_blank(client, monkeypatch, phase, offer, text):
+    _blank_night(TUE)
+    force(monkeypatch, phase=phase, since=TUE, reasons=["HRV below your normal range 3 nights running"],
+          offer=offer, trim_taken=phase == "firm")
+    page = client.get("/").text
+    assert 'id="recovery"' in page and text in page and 'role="alert"' in page
