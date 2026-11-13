@@ -60,6 +60,14 @@ def init() -> None:
                 splits TEXT NOT NULL,
                 laps TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS run_files (
+                id INTEGER PRIMARY KEY,
+                fit BLOB NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS run_source (
+                id INTEGER PRIMARY KEY,
+                source TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS checkins (
                 week INTEGER PRIMARY KEY,
                 feel INTEGER NOT NULL,
