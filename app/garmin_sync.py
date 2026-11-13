@@ -8,6 +8,7 @@ it matches (same date, km within 3 % or 0.2 km), so history is not counted twice
 import io
 import json
 import zipfile
+from datetime import date, timedelta
 
 from . import db, fitfile, garmin_api
 
@@ -95,3 +96,108 @@ def sync_runs(client, since, max_details: int = MAX_DETAILS_PER_SYNC) -> int:
         _replace_smashrun(c, saved)
     _fetch_details(client, runs, max_details)
     return len(saved)
+
+
+# --- daily wellness ----------------------------------------------------------------------------------------
+
+RHR_DAYS_PER_SYNC = 40  # resting HR has no range endpoint: one call per day, so cap the calls per sync
+CHUNK_DAYS = 28  # each range endpoint is asked for at most this many days at a time
+HRV_PATH = "/hrv-service/hrv/daily/{s}/{e}"
+SLEEP_PATH = "/sleep-service/sleep/dailySleepSummariesByDate"
+WEIGHT_PATH = "/weight-service/weight/range/{s}/{e}"
+RHR_PATH = "/wellness-service/wellness/dailyHeartRate"
+COLUMNS = ("hrv_night", "hrv_week_avg", "hrv_low", "hrv_high", "rhr", "sleep_s", "sleep_score", "stress_avg",
+           "weight_kg")
+
+
+def _chunks(since: date, until: date):
+    s = since
+    while s <= until:
+        e = min(s + timedelta(days=CHUNK_DAYS - 1), until)
+        yield s, e
+        s = e + timedelta(days=1)
+
+
+def _json(r):
+    if r.status_code >= 400:
+        raise garmin_api.SyncError(f"Garmin returned {r.status_code}: {r.text[:200]}")
+    return r.json()
+
+
+def _num(v, cast=float):
+    """A reading as a number; a missing one stays None (never 0)."""
+    return cast(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def _hrv(item: dict) -> dict:
+    b = item.get("baseline") or {}
+    return {"hrv_night": _num(item.get("lastNightAvg")), "hrv_week_avg": _num(item.get("weeklyAvg")),
+            "hrv_low": _num(b.get("balancedLow")), "hrv_high": _num(b.get("balancedUpper"))}
+
+
+def _sleep(item: dict) -> dict:
+    return {"sleep_s": _num(item.get("sleepTimeSeconds"), int) or None,
+            "sleep_score": _num(((item.get("sleepScores") or {}).get("overall") or {}).get("value"), int),
+            "stress_avg": _num(item.get("avgSleepStress"), round)}
+
+
+def _weight(item: dict) -> dict:
+    g = _num((item.get("latestWeight") or {}).get("weight"))
+    return {"weight_kg": g / 1000 if g else None}
+
+
+def _save_day(c, day: str, cols: dict, raw: dict) -> None:
+    """Merge one source's values into the day's row; a column the source has no value for keeps what it had."""
+    old = c.execute("SELECT raw FROM wellness WHERE date = ?", (day,)).fetchone()
+    merged = json.loads(old["raw"]) if old and old["raw"] else {}
+    merged.update(raw)
+    names = list(cols)
+    c.execute(f"INSERT INTO wellness(date, {', '.join(names)}, raw) VALUES (?{',?' * len(names)}, ?) "
+              f"ON CONFLICT(date) DO UPDATE SET raw = excluded.raw, "
+              + ", ".join(f"{n} = COALESCE(excluded.{n}, {n})" for n in names),
+              (day, *cols.values(), json.dumps(merged)))
+
+
+def _range(client, since: date, until: date, path: str, params, pick, key, date_key, parse) -> set[str]:
+    """Ask one range endpoint chunk by chunk and merge every day it returns; gives the days it saw."""
+    seen: set[str] = set()
+    for s, e in _chunks(since, until):
+        body = _json(garmin_api.get(client, path.format(s=s, e=e), params(s, e)))
+        with db.conn() as c:
+            for item in pick(body):
+                day = str(item.get(date_key) or "")[:10]
+                if len(day) == 10:
+                    _save_day(c, day, parse(item), {key: item})
+                    seen.add(day)
+    return seen
+
+
+def _rhr_days(since: date, until: date) -> list[str]:
+    """Days to ask resting HR for: the newest ones first, those in range with none stored, plus today and yesterday."""
+    with db.conn() as c:
+        have = {r["date"] for r in c.execute("SELECT date FROM wellness WHERE rhr IS NOT NULL")}
+    want = [until - timedelta(days=i) for i in range((until - since).days + 1)]
+    always = {until, until - timedelta(days=1)}
+    return [d.isoformat() for d in want if d in always or d.isoformat() not in have][:RHR_DAYS_PER_SYNC]
+
+
+def sync_wellness(client, since: date, until: date) -> int:
+    """Save HRV, sleep, weight (range endpoints) and resting HR (per day) from `since` to `until`; returns days touched."""
+    days = _range(client, since, until, HRV_PATH, lambda s, e: None, lambda b: b.get("hrvSummaries") or [],
+                  "hrv", "calendarDate", _hrv)
+    days |= _range(client, since, until, SLEEP_PATH, lambda s, e: {"startDate": s.isoformat(), "endDate": e.isoformat()},
+                   lambda b: b or [], "sleep", "calendarDate", _sleep)
+    days |= _range(client, since, until, WEIGHT_PATH, lambda s, e: {"includeAll": "true"},
+                   lambda b: b.get("dailyWeightSummaries") or [], "weight", "summaryDate", _weight)
+    for day in _rhr_days(since, until):
+        r = garmin_api.get(client, RHR_PATH, {"date": day})
+        if r.status_code >= 400:
+            continue  # that day is asked again next sync
+        body = r.json() or {}
+        rhr = _num(body.get("restingHeartRate"), int)
+        if rhr is None:
+            continue
+        with db.conn() as c:
+            _save_day(c, day, {"rhr": rhr}, {"rhr": {k: v for k, v in body.items() if k != "heartRateValues"}})
+        days.add(day)
+    return len(days)

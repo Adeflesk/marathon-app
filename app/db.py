@@ -124,6 +124,12 @@ def init() -> None:
                 key TEXT PRIMARY KEY,
                 value TEXT
             );
+            CREATE TABLE IF NOT EXISTS wellness (
+                date TEXT PRIMARY KEY,
+                hrv_night REAL, hrv_week_avg REAL, hrv_low REAL, hrv_high REAL,
+                rhr INTEGER, sleep_s INTEGER, sleep_score INTEGER, stress_avg INTEGER, weight_kg REAL,
+                raw TEXT
+            );
             CREATE TABLE IF NOT EXISTS moves (
                 date TEXT NOT NULL,
                 session TEXT NOT NULL,
@@ -148,6 +154,14 @@ def actual_by_date() -> dict[str, dict]:
             if d["main"] is None or r["km"] > d["main"]["km"]:  # the day's longest run gets the review
                 d["main"] = {"id": r["id"], "km": r["km"], "seconds": r["seconds"]}
     return out
+
+
+def wellness() -> list[dict]:
+    """Daily wellness rows (HRV, resting HR, sleep, stress, weight), oldest first, without `raw`. NULL = missing."""
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT date, hrv_night, hrv_week_avg, hrv_low, hrv_high, rhr, sleep_s, sleep_score, stress_avg, "
+            "weight_kg FROM wellness ORDER BY date")]
 
 
 def checkins() -> dict[int, dict]:
