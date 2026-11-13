@@ -185,6 +185,8 @@
 {% endif %}
 {% if ankle_flag %}<p class="notice" style="margin-top:12px">Ankle flag until {{ ankle_flag.strftime('%A %-d %B') }}: no increases on ankle work.</p>{% endif %}
 
+{% include "_recovery.html" %}
+
 {% if morning_check %}{{ sx.morning_check(today) }}{% endif %}
 
 {% set run_today = next_run and next_run.date == today %}

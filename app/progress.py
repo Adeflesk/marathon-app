@@ -34,6 +34,17 @@ def fitness_trend(weeks: list[dict], ref_pace: float) -> list[dict]:
     return out
 
 
+TREND_DAYS = 56
+TREND_KEYS = ("hrv_night", "hrv_week_avg", "hrv_low", "hrv_high", "rhr", "sleep_s")
+
+
+def recovery_trend(wellness: list[dict], t: date) -> list[dict]:
+    """Per day with a wellness row, the last 8 weeks up to `t`: HRV (night, 7-day average, band), resting HR, sleep."""
+    lo = (t - timedelta(days=TREND_DAYS - 1)).isoformat()
+    return [{"date": r["date"], **{k: r.get(k) for k in TREND_KEYS}}
+            for r in sorted(wellness, key=lambda r: r["date"]) if lo <= r["date"] <= t.isoformat()]
+
+
 def _colour(drift: float | None) -> str:
     if drift is None:
         return "none"

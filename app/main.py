@@ -114,6 +114,7 @@ templates.env.filters["pace_mi"] = lambda s: fmt_pace(pace_per_mi(s))
 templates.env.filters["km"] = fmt_km
 templates.env.filters["hms"] = fmt_time
 templates.env.filters["clock"] = lambda s: fmt_time(s)[2:] if s < 3600 else fmt_time(s)  # 25:30, 1:55:10
+templates.env.filters["dayx"] = lambda d, d0: (date.fromisoformat(d) - date.fromisoformat(d0)).days  # chart x
 templates.env.filters["longdate"] = lambda d: date.fromisoformat(d).strftime("%-d %b")
 templates.env.globals["band"] = band_segments
 
@@ -188,6 +189,7 @@ def progress_page(request: Request, msg: str = ""):
         "s": s, "msg": msg, "auto_sync": auto_sync, "today": t, "verdict": verdict, "options": options, "week": current,
         "n_weeks": len(weeks), "why": progress.why_rows(weeks, t, ref_pace),
         "fitness": progress.fitness_trend(weeks, ref_pace), "ref_pace": ref_pace,
+        "recovery_trend": progress.recovery_trend(db.wellness(), t),
         "long_runs": progress.long_runs(weeks), "plan": progress.plan_bars(weeks),
         "ankle": progress.ankle_table(weeks, st["tests"]), "ankle_state": st,
         "summaries": progress.summaries(weeks, s, st, db.results(), t),

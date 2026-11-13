@@ -485,6 +485,7 @@ def dashboard(s: dict, weeks: list[dict], t: date, results: list[dict], token_ex
         "token_warning": {"expires": token_expires, "days": left} if left is not None and left <= garmin_api.KEY_WARN_DAYS
         else None,
         "profile": profile(weeks),
+        "recovery": weeks[0]["recovery"],
     }
 
 

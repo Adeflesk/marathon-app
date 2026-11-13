@@ -21,7 +21,8 @@
   svg.chart { width: 100%; height: auto; background: var(--surface); border-radius: 8px; margin-top: 8px; }
   svg.chart text { fill: var(--mute); font-size: 10px; }
   .c-line { fill: none; stroke: var(--ink); stroke-width: 2; vector-effect: non-scaling-stroke; }
-  .c-dot { fill: var(--ink); }
+  .c-dot { fill: var(--ink); } .c-dot.faint { opacity: .45; }
+  .c-band { fill: var(--easy); opacity: .3; } .c-ref { stroke: var(--mute); stroke-dasharray: 3 3; }
   .c-good { fill: var(--good); } .c-warn { fill: var(--warn); } .c-bad { fill: var(--bad); } .c-none { fill: var(--line); }
   .c-planned { fill: none; stroke: var(--easy); stroke-width: 1.5; }
   .c-done { fill: var(--easy); }
@@ -101,6 +102,59 @@
   <p class="mute small">Not enough easy runs near {{ ref_pace|pace }}/km yet. It needs two weeks with three or more such kilometres.</p>
   {% endif %}
 </section>
+
+{% if recovery_trend %}
+{% set rt = recovery_trend %}
+{% set d0 = rt[0].date %}
+{% macro xp(day, d0) %}{{ (20 + 300 * (day|dayx(d0)) / 55)|round(1) }}{% endmacro %}
+<section aria-labelledby="rec-h" style="margin-top:28px">
+  <h2 id="rec-h">Recovery</h2>
+  <p class="mute">Overnight HRV against your normal range, resting heart rate and sleep, over the last 8 weeks.</p>
+  {% set hrv = rt|selectattr('hrv_night')|list %}
+  {% if hrv|length >= 2 %}
+  {% set vals = hrv|map(attribute='hrv_night')|list + (rt|selectattr('hrv_low')|map(attribute='hrv_low')|list) + (rt|selectattr('hrv_high')|map(attribute='hrv_high')|list) %}
+  {% set lo = vals|min - 3 %}{% set hi = vals|max + 3 %}
+  {% set band = rt|selectattr('hrv_low')|selectattr('hrv_high')|list %}
+  {% set avg = rt|selectattr('hrv_week_avg')|list %}
+  <h3 class="small" style="margin-top:12px">Overnight HRV (ms)</h3>
+  <svg class="chart" viewBox="0 0 340 100" role="img" aria-label="Overnight HRV: latest {{ hrv[-1].hrv_night|round|int }} ms{% if hrv[-1].hrv_low is not none and hrv[-1].hrv_high is not none %}, normal range {{ hrv[-1].hrv_low|round|int }} to {{ hrv[-1].hrv_high|round|int }}{% endif %}">
+    {% if band|length >= 2 %}
+    {% set up = [] %}{% set down = [] %}
+    {% for r in band %}{% set x = xp(r.date, d0) %}{% set _ = up.append(x ~ ',' ~ ((10 + 70 * (hi - r.hrv_high) / (hi - lo))|round(1))) %}{% set _ = down.insert(0, x ~ ',' ~ ((10 + 70 * (hi - r.hrv_low) / (hi - lo))|round(1))) %}{% endfor %}
+    <polygon class="c-band" points="{{ (up + down)|join(' ') }}"/>
+    {% endif %}
+    {% for r in hrv %}<circle class="c-dot faint" cx="{{ xp(r.date, d0) }}" cy="{{ (10 + 70 * (hi - r.hrv_night) / (hi - lo))|round(1) }}" r="2"><title>{{ r.date }}: {{ r.hrv_night|round|int }} ms</title></circle>{% endfor %}
+    {% if avg|length >= 2 %}<polyline class="c-line" points="{% for r in avg %}{{ xp(r.date, d0) }},{{ (10 + 70 * (hi - r.hrv_week_avg) / (hi - lo))|round(1) }}{{ ' ' if not loop.last }}{% endfor %}"/>{% endif %}
+    <text x="20" y="95">{{ rt[0].date[5:] }}</text>
+    <text x="320" y="95" text-anchor="end">now: {{ hrv[-1].hrv_night|round|int }}</text>
+  </svg>
+  <p class="mute small">Dots are single nights, the line is the 7-day average, the shaded strip is your normal range.</p>
+  {% else %}<p class="mute small">Not enough nights of HRV yet.</p>{% endif %}
+
+  {% set rhr = rt|selectattr('rhr')|list %}
+  {% if rhr|length >= 2 %}
+  {% set lo = (rhr|map(attribute='rhr')|min) - 2 %}{% set hi = (rhr|map(attribute='rhr')|max) + 2 %}
+  <h3 class="small" style="margin-top:12px">Resting heart rate (bpm)</h3>
+  <svg class="chart" viewBox="0 0 340 100" role="img" aria-label="Resting heart rate: latest {{ rhr[-1].rhr }} bpm, lowest {{ rhr|map(attribute='rhr')|min }}, highest {{ rhr|map(attribute='rhr')|max }}">
+    <polyline class="c-line" points="{% for r in rhr %}{{ xp(r.date, d0) }},{{ (10 + 70 * (hi - r.rhr) / (hi - lo))|round(1) }}{{ ' ' if not loop.last }}{% endfor %}"/>
+    <text x="20" y="95">{{ rhr[0].date[5:] }}: {{ rhr[0].rhr }}</text>
+    <text x="320" y="95" text-anchor="end">now: {{ rhr[-1].rhr }}</text>
+  </svg>
+  {% endif %}
+
+  {% set sl = rt|selectattr('sleep_s')|list %}
+  {% if sl|length >= 2 %}
+  {% set hmax = [(sl|map(attribute='sleep_s')|max) / 3600 + 0.5, 8]|max %}
+  <h3 class="small" style="margin-top:12px">Sleep (hours)</h3>
+  <svg class="chart" viewBox="0 0 340 100" role="img" aria-label="Sleep: latest {{ sl[-1].sleep_s // 3600 }}:{{ '%02d'|format(sl[-1].sleep_s % 3600 // 60) }}, average {{ ((sl|sum(attribute='sleep_s')) / sl|length / 3600)|round(1) }} hours">
+    <line class="c-ref" x1="20" x2="320" y1="{{ (85 - 70 * 6 / hmax)|round(1) }}" y2="{{ (85 - 70 * 6 / hmax)|round(1) }}"/>
+    {% for r in sl %}{% set h = 70 * r.sleep_s / 3600 / hmax %}<rect class="{{ 'c-warn' if r.sleep_s < 21600 else 'c-none' }}" x="{{ (20 + 300 * (r.date|dayx(d0)) / 55 - 2)|round(1) }}" y="{{ (85 - h)|round(1) }}" width="4" height="{{ h|round(1) }}"><title>{{ r.date }}: {{ r.sleep_s // 3600 }}:{{ '%02d'|format(r.sleep_s % 3600 // 60) }}</title></rect>{% endfor %}
+    <text x="20" y="97">dashed line: 6 hours</text>
+    <text x="320" y="97" text-anchor="end">last: {{ sl[-1].sleep_s // 3600 }}:{{ '%02d'|format(sl[-1].sleep_s % 3600 // 60) }}</text>
+  </svg>
+  {% endif %}
+</section>
+{% endif %}
 
 <section aria-labelledby="long-h" style="margin-top:24px">
   <h2 id="long-h">Long runs</h2>
