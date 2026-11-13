@@ -165,3 +165,9 @@ def test_two_runs_a_day_pair_by_distance(garmin):
     sync(garmin)
     assert [r["id"] for r in rows()] == [1, 2]
     assert sum(r["km"] for r in rows()) == pytest.approx(15.07)
+
+
+@pytest.mark.parametrize("type_key", ["indoor_running", "virtual_run", "street_running", "treadmill_running"])
+def test_other_run_types_are_runs(garmin, type_key):
+    garmin.runs = [run(1, "2026-11-12", 5000, type_key=type_key)]
+    assert sync(garmin) == 1

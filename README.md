@@ -42,7 +42,8 @@ week is never trimmed.
 - **Suspicion:** three nights in a row with HRV below your range, or a 7-day average below it. Nothing
   changes yet. Resting heart rate and short or poor sleep are shown as extra weight, but never start it.
 - **The next run decides.** If that run shows a higher heart rate at easy pace or more drift than your
-  recent runs, the suspicion turns into advice; if it looks normal, the note stays a note.
+  recent runs, or it's a hard session that fell short of its reps, the suspicion turns into advice; if it
+  looks normal, the note stays a note.
 - **Take the trim:** the rest of that week at 90%, one rep off the next session, and strength held at its
   current loads. You choose; nothing happens until you press it.
 - **Make the next run easy:** if HRV is still low three nights after the advice (or two more runs in), the

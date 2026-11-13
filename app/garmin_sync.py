@@ -16,7 +16,8 @@ import httpx
 from . import db, fitfile, garmin_api
 
 MAX_DETAILS_PER_SYNC = 40
-RUN_TYPES = {"running", "treadmill_running", "trail_running", "track_running"}
+RUN_TYPES = {"running", "treadmill_running", "trail_running", "track_running", "indoor_running", "virtual_run",
+             "street_running"}
 SEARCH = "/activitylist-service/activities/search/activities"
 PAGE = 100
 MAX_PAGES = 20
