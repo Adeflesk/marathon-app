@@ -25,20 +25,31 @@ def conn() -> Iterator[sqlite3.Connection]:
         c.close()
 
 
-def backup_bytes() -> bytes:
-    """A consistent snapshot of the whole database, as the bytes of a SQLite file."""
+SECRET_META = ("garmin_token", "garmin_token_exp")  # left out of a backup
+
+
+def backup_file() -> str:
+    """A consistent snapshot of the whole database in a temp SQLite file (the caller removes it), without the
+    cached Garmin access token. Vacuumed, so the deleted rows don't linger in free pages."""
     import tempfile
 
-    with tempfile.TemporaryDirectory() as d:
-        target = Path(d) / "backup.db"
+    fd, target = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
         src = sqlite3.connect(DB_PATH)
         dst = sqlite3.connect(target)
         try:
             src.backup(dst)
+            dst.execute(f"DELETE FROM meta WHERE key IN ({','.join('?' * len(SECRET_META))})", SECRET_META)
+            dst.commit()
+            dst.execute("VACUUM")
         finally:
             dst.close()
             src.close()
-        return target.read_bytes()
+    except BaseException:
+        os.remove(target)
+        raise
+    return target
 
 
 def init() -> None:

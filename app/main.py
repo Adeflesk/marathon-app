@@ -9,6 +9,7 @@ from urllib.parse import urlencode, urlsplit
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.background import BackgroundTask
 
 from . import ankle, db, fuel, garmin, garmin_api, garmin_sync, moves, progress, strength, view
 from .config import load_settings, race_date
@@ -301,11 +302,11 @@ def workouts_zip(n: int):
 
 @app.get("/backup.db")
 def backup_db():
-    return Response(
-        db.backup_bytes(),
-        media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="marathon-{date.today().isoformat()}.db"'},
-    )
+    """The database as a file download, streamed from a temp snapshot that's removed once sent."""
+    path = db.backup_file()
+    return FileResponse(path, media_type="application/octet-stream",
+                        filename=f"marathon-{date.today().isoformat()}.db",
+                        background=BackgroundTask(os.remove, path))
 
 
 def run_sync(quick: bool = False) -> str:
