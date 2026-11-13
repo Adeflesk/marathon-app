@@ -144,8 +144,10 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
 - `app/garmin_sync.py` — `sync_runs()` pages the activity search, upserts `activities`, then fetches the FIT ZIP
   once per new run into `run_files`/`run_details` (`run_source` marks Garmin rows); `sync_wellness()` fills
   `wellness` (HRV, resting HR, sleep, stress, weight); `sync()` does both. A Garmin run replaces the matching
-  older row (same date, km within 3% or 0.2 km). An `activities` row with no `run_source` entry came from
-  Smashrun, the previous source (removed).
+  older row (same date, km within 3% or 0.2 km), taking over its `run_details` until its own FIT arrives (FIT is
+  fetched for runs with no `run_files` row). A FIT that fails is retried next sync, logged and counted in `meta`
+  `garmin_fit_failures`. An `activities` row with no `run_source` entry came from Smashrun, the previous source
+  (removed).
 - `app/recovery.py` — pure HRV episode state, recomputed per request. Starts on 3 nights below the HRV band or a
   low 7-day average; the next judged run (HR at easy pace, drift) confirms it (advice) or not (note); firm after
   3 more nights or 2 more runs; clears on 2 nights in band. `offer` says which button (`trim`, then `easy`) the

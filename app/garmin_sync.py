@@ -7,6 +7,7 @@ it matches (same date, km within 3 % or 0.2 km), so history is not counted twice
 """
 import io
 import json
+import logging
 import zipfile
 from datetime import date, datetime, timedelta
 
@@ -20,6 +21,9 @@ SEARCH = "/activitylist-service/activities/search/activities"
 PAGE = 100
 MAX_PAGES = 20
 KM_REL, KM_ABS = 0.03, 0.2
+FIT_FAILURES = "garmin_fit_failures"  # meta: {"count", "last_error", "at"} of FIT downloads or reads that failed
+
+log = logging.getLogger(__name__)
 
 
 def _close(a: float, b: float) -> bool:
@@ -33,33 +37,48 @@ def _fit_bytes(zip_bytes: bytes) -> bytes:
 
 
 def _replace_smashrun(c, garmin: list[tuple[int, str, float]]) -> None:
-    """Drop the Smashrun rows that the given Garmin runs (id, date, km) stand in for, pairing by distance per day."""
+    """Drop the Smashrun rows that the given Garmin runs (id, date, km) stand in for, pairing by distance per day.
+    The Smashrun run's splits and laps move to the Garmin id, so the run keeps them until its FIT replaces them."""
     for day in {d for _, d, _ in garmin}:
         mine = sorted(((km, i) for i, d, km in garmin if d == day))
         theirs = sorted((r["km"], r["id"]) for r in c.execute(
             "SELECT id, km FROM activities WHERE date = ? AND id NOT IN (SELECT id FROM run_source)", (day,)))
-        for km, _ in mine:
+        for km, garmin_id in mine:
             best = min((t for t in theirs if _close(km, t[0])), key=lambda t: abs(t[0] - km), default=None)
             if best:
                 theirs.remove(best)
                 c.execute("DELETE FROM activities WHERE id = ?", (best[1],))
-                c.execute("DELETE FROM run_details WHERE id = ?", (best[1],))
+                if c.execute("SELECT 1 FROM run_details WHERE id = ?", (best[1],)).fetchone():
+                    c.execute("DELETE FROM run_details WHERE id = ?", (garmin_id,))
+                    c.execute("UPDATE run_details SET id = ? WHERE id = ?", (garmin_id, best[1]))
+
+
+def _failed(i: int, why: str) -> None:
+    """Count a FIT that couldn't be fetched or read, keep the last reason, and log it."""
+    log.warning("Garmin FIT for activity %s failed: %s", i, why)
+    old = json.loads(db.get_meta(FIT_FAILURES) or "{}")
+    db.set_meta(FIT_FAILURES, json.dumps({"count": old.get("count", 0) + 1, "last_error": f"{i}: {why}",
+                                          "at": datetime.now().isoformat(timespec="seconds")}))
 
 
 def _fetch_details(client, runs: list[tuple[str, int]], limit: int) -> None:
-    """FIT, km splits and laps for runs without them, newest first. A run that fails is retried next sync."""
-    have = db.run_details([i for _, i in runs])
+    """FIT, km splits and laps for runs without a stored FIT, newest first (details carried over from Smashrun
+    are replaced). A run that fails is recorded and retried next sync."""
+    with db.conn() as c:
+        have = {r["id"] for r in c.execute("SELECT id FROM run_files")}
     missing = sorted((r for r in runs if r[1] not in have), reverse=True)[:limit]
     for _, i in missing:
         try:
             r = garmin_api.get(client, f"/download-service/files/activity/{i}")
             if r.status_code >= 400:
+                _failed(i, f"Garmin returned {r.status_code}")
                 continue
             d = fitfile.details(r.content)
             fit = _fit_bytes(r.content)
         except garmin_api.SyncError:
             raise
-        except Exception:
+        except Exception as exc:
+            _failed(i, f"{type(exc).__name__}: {exc}")
             continue
         with db.conn() as c:
             c.execute("INSERT OR REPLACE INTO run_files(id, fit) VALUES (?,?)", (i, fit))

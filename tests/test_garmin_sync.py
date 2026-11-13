@@ -108,10 +108,13 @@ def test_bad_fit_retried_next_sync(garmin):
     assert set(db.run_details([1, 2])) == {1, 2}
 
 
+SMASHRUN_SPLITS = [{"distance": 1.0, "seconds": 333.0, "heartRate": 139}]
+
+
 def add_smashrun(i, day, km):
     with db.conn() as c:
         c.execute("INSERT INTO activities(id, date, km, seconds, avg_hr) VALUES (?,?,?,?,?)", (i, day, km, 3000, 140))
-        c.execute("INSERT INTO run_details(id, splits, laps) VALUES (?, '[]', '[]')", (i,))
+        c.execute("INSERT INTO run_details(id, splits, laps) VALUES (?, ?, '[]')", (i, json.dumps(SMASHRUN_SPLITS)))
 
 
 def test_replaces_matching_smashrun_row(garmin):
@@ -120,6 +123,31 @@ def test_replaces_matching_smashrun_row(garmin):
     sync(garmin)
     assert [r["id"] for r in rows()] == [1]
     assert 900 not in db.run_details([900])
+
+
+def test_replaced_smashrun_run_keeps_its_splits_until_the_fit_arrives(garmin):
+    add_smashrun(900, "2026-11-10", 10.0)
+    garmin.runs = [run(1, "2026-11-10", 10100)]
+    sync(garmin, max_details=0)  # no FIT fetched yet
+    assert db.run_details([1, 900]) == {1: {"splits": SMASHRUN_SPLITS, "laps": []}}
+    sync(garmin)
+    assert db.run_details([1])[1]["splits"] == [{"distance": 1.0, "seconds": 301, "heartRate": None}]  # Garmin's
+
+
+def test_failing_fit_leaves_carried_over_details_and_is_recorded(garmin, caplog):
+    add_smashrun(900, "2026-11-10", 10.0)
+    garmin.runs = [run(1, "2026-11-10", 10100)]
+    garmin.bad = {1}
+    with caplog.at_level("WARNING"):
+        sync(garmin)
+        sync(garmin)
+    assert db.run_details([1])[1]["splits"] == SMASHRUN_SPLITS
+    failures = json.loads(db.get_meta("garmin_fit_failures"))
+    assert failures["count"] == 2 and "1" in failures["last_error"] and "corrupt" in failures["last_error"]
+    assert any("corrupt" in r.getMessage() for r in caplog.records)
+    garmin.bad = set()
+    sync(garmin)
+    assert db.run_details([1])[1]["splits"][0]["seconds"] == 301
 
 
 def test_keeps_unmatched_smashrun_rows(garmin):
