@@ -57,16 +57,32 @@ def test_single_step_workout_laps_are_not_reps():
     assert [x["lapType"] for x in out] == ["general"] * 5
 
 
+def _zip_of(data):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("1.fit", data)
+    return buf.getvalue()
+
+
 def test_invalid_utf8_in_a_side_message_is_skipped():
     data = make_fit(steady(2.5), [(1000, 300, "warmup"), (800, 200, "active")], True, "abcdef")
     bad = data.replace(b"abcdef", b"ab\xa0\xa0ef")
     assert bad != data
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as z:
-        z.writestr("1.fit", bad)
-    d = fitfile.details(buf.getvalue())
+    d = fitfile.details(_zip_of(bad))
     assert [round(x["seconds"]) for x in d["splits"]] == [300, 600, 750]
     assert [x["lapType"] for x in d["laps"]] == ["warmup", "work"]
+
+
+def test_invalid_utf8_in_workout_step_still_counts():
+    steps = [("warmup", "WARMUPAA"), ("active", "FASTAAAA"), ("rest", "JOGAAAAA"), ("active", "FASTBBBB"), ("cooldown", "COOLAAAA")]
+    laps = [(1000, 300, "warmup"), (800, 200, "active"), (200, 90, "rest"), (800, 195, "active"), (1000, 330, "cooldown")]
+    data = make_fit(steady(4), laps, steps)
+    bad = data.replace(b"FASTAAAA", b"FAST\xa3AAA").replace(b"WARMUPAA", b"WARM\xefPAA")
+    assert b"FAST\xa3AAA" in bad and b"WARM\xefPAA" in bad
+    d = fitfile.details(_zip_of(bad))
+    assert [x["lapType"] for x in d["laps"]] == ["warmup", "work", "rest", "work", "cooldown"]
+    assert [round(x["endDuration"]) for x in d["laps"]] == [300, 500, 590, 785, 1115]
+    assert [round(x["seconds"]) for x in d["splits"]] == [300, 600, 900, 1200]
 
 
 def test_zip_without_fit_is_a_value_error():

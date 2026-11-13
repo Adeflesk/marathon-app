@@ -6,15 +6,16 @@ Pure: ZIP bytes in, dict out. Both lists are cumulative, like Smashrun's: splits
 otherwise "general" for every lap).
 """
 import io
+import threading
 import zipfile
 
 from fit_tool.data_message import DataMessage
 from fit_tool.decoder import FitDecoder, register_developer_field
 from fit_tool.exceptions import FitRecordError
+from fit_tool.field import Field
 
 PAUSE_S = 10  # a gap between two records longer than this is a pause, not running
 MIN_TAIL_M = 10  # a final partial km shorter than this isn't worth a split
-ESSENTIAL = {19, 20, 27}  # lap, record, workout_step: global message numbers that must decode
 ACTIVE = (0, 5)  # FIT intensity: active, interval
 REPEAT = 6  # FIT workout step duration type: repeat until steps complete
 MIN_REPS = 2  # laps are typed only for a workout with this many active steps; one is a plain run
@@ -22,22 +23,44 @@ MIN_REPS = 2  # laps are typed only for a workout with this many active steps; o
 LAP_TYPES = {0: "work", 1: "rest", 2: "warmup", 3: "cooldown", 4: "rest", 5: "work"}
 
 
+_LENIENT = threading.Lock()
+
+
+def _read_strings_leniently(self, bytes_buffer, offset=0, size=None):
+    """fit-tool's Field.read_strings_from_bytes, but a byte that isn't UTF-8 becomes U+FFFD."""
+    end = None if size is None else offset + size
+    text = bytes(bytes_buffer[offset:end]).decode("utf-8", errors="replace")
+    self.encoded_values = [x for x in text.split("\u0000")[:-1] if x]
+
+
+def _project(decoder, raw, registry):
+    """Project one raw record. Real files carry strings that aren't valid UTF-8 (workout step
+    names, device strings), which makes fit-tool reject the whole message, numbers and all. On
+    that error only, project it again with a lenient string decode, patched in for that one
+    call under a lock and restored after. Any other decode error propagates."""
+    try:
+        return decoder._project_raw(raw, registry)  # private: see requirements.txt
+    except FitRecordError as exc:
+        if not isinstance(exc.__cause__, UnicodeError):
+            raise
+    with _LENIENT:
+        original = Field.read_strings_from_bytes
+        Field.read_strings_from_bytes = _read_strings_leniently
+        try:
+            return decoder._project_raw(raw, registry)
+        finally:
+            Field.read_strings_from_bytes = original
+
+
 def _messages(data: bytes) -> list:
-    """Every data message in a FIT file. Real files carry device strings that aren't valid
-    UTF-8; a message that fails for that reason is skipped, unless it is one the result is
-    built from (record, lap, workout step), where dropping it would corrupt the numbers."""
+    """Every data message in a FIT file."""
     decoder = FitDecoder(check_crc=False)
     document = decoder.decode_document(data)
     registry = decoder.developer_fields_by_data_index
     out = []
     for segment in document.segments:
         for raw in segment.records:
-            try:
-                record = decoder._project_raw(raw, registry)  # private: see requirements.txt
-            except FitRecordError as exc:
-                if not isinstance(exc.__cause__, UnicodeError) or raw.definition.global_id in ESSENTIAL:
-                    raise
-                continue
+            record = _project(decoder, raw, registry)
             register_developer_field(record, registry)
             if isinstance(record.message, DataMessage):
                 out.append(record.message)

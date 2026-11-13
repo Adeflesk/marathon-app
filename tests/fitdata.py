@@ -24,7 +24,7 @@ def make_fit(records, laps, workout, name="Session"):
     """records: (seconds, metres, hr); laps: (metres, timer_seconds, intensity).
 
     workout: False for a free run, True for DEFAULT_STEPS, or a list of steps, each an
-    intensity name or ("repeat", first_step_index, times)."""
+    intensity name, (intensity, step_name), or ("repeat", first_step_index, times)."""
     builder = FitFileBuilder(auto_define=True, min_string_size=50)
     fid = FileIdMessage()
     fid.type = FileType.ACTIVITY
@@ -40,7 +40,10 @@ def make_fit(records, laps, workout, name="Session"):
         for n, spec in enumerate(DEFAULT_STEPS if workout is True else workout):
             step = WorkoutStepMessage()
             step.message_index = n
-            if isinstance(spec, tuple):
+            if isinstance(spec, tuple) and spec[0] != "repeat":
+                step.intensity = INTENSITY[spec[0]]
+                step.workout_step_name = spec[1]
+            elif isinstance(spec, tuple):
                 step.duration_type = WorkoutStepDuration.REPEAT_UNTIL_STEPS_CMPLT
                 step.duration_step = spec[1]
                 step.target_repeat_steps = spec[2]
