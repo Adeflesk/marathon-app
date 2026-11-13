@@ -180,7 +180,8 @@ def _make_easy(wo: dict, factor: float) -> None:
 
 def scale_and_shift_runs(weeks: list[dict], s: dict, f: Facts, t: date, moved: dict) -> None:
     """Scale each week's runs by the smaller of last week's check-in and the missed-week guard, apply the
-    recovery choices taken (the trim: the rest of its week at 0.9 at most and a rep off the next session; "easy":
+    recovery choices taken (the trim: the rest of its week at 0.9 at most and a rep off the next session, or that
+    session at 0.9 when it has no rep to spare; "easy":
     the next run easy), add the fuel notes, then apply moves (relocate takes a run across Sunday). Strength
     follows the check-in and the trim."""
     caps, synced = volume_guard(weeks, f.actual, f.checkins, t, s["base_weekly_km"], f.last_sync)
@@ -213,6 +214,7 @@ def scale_and_shift_runs(weeks: list[dict], s: dict, f: Facts, t: date, moved: d
                 if quality:  # the trim's session is gone, so its rep off goes with it
                     rep_off = False
             else:
+                unscaled = copy.deepcopy(wo) if quality else None
                 if wo_factor != 1.0 and wo["type"] != "race":
                     if "steps" in wo:  # fewer reps, so the day, the note and the .fit all agree
                         scale_session(wo, wo_factor, s["paces"])
@@ -220,7 +222,10 @@ def scale_and_shift_runs(weeks: list[dict], s: dict, f: Facts, t: date, moved: d
                         wo["km"] = _half(wo["km"] * wo_factor)
                 if quality:
                     rep_off = False
-                    drop_rep(wo, s["paces"])
+                    if not drop_rep(wo, s["paces"]):  # no rep to spare: scale it as a 0.9 check-in would
+                        wo.clear()
+                        wo.update(unscaled)
+                        scale_session(wo, min(run_factor, RECOVERY_FACTOR), s["paces"])
             # fuel practice on long runs of 90 minutes or more, from the km left after any trim
             wo["fuel"] = fuel.long_run_note(wo["km"], wo.get("mp_km", 0), s["paces"]["long"]) \
                 if wo["type"] == "long" else None

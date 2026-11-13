@@ -69,11 +69,12 @@ def test_trim_drops_a_rep_never_below_two():
     assert wo["km"] == _half(sessions.session_km(wo["steps"], paces)) and wo["note"].startswith("2 km WU, 3 ×")
     assert sessions.drop_rep(wo, paces) and reps(wo) == 2
     assert not sessions.drop_rep(wo, paces) and reps(wo) == 2
-    # a taper session already at two reps keeps them
+    # a taper session already at two reps keeps them, and gets a shorter rep instead
     taper_wed = date(2027, 2, 24)
     plain = by_day(weeks(taper_wed)[18])[taper_wed]
     trimmed = by_day(weeks(taper_wed, trims=[trim(taper_wed)])[18])[taper_wed]
     assert reps(plain) == 2 and reps(trimmed) == 2
+    assert trimmed["steps"] != plain["steps"] and trimmed["km"] < plain["km"]
 
 
 def _minus_one(steps: list) -> list:
@@ -87,23 +88,31 @@ def _minus_one(steps: list) -> list:
 
 @pytest.mark.parametrize("tired", [False, True])
 def test_trimmed_session_is_the_untrimmed_one_minus_one_rep(tired):
-    """Same rep length, same cool-down, one rep fewer (a 2-rep or `specific` session comes through as it was)."""
-    seen_same, dropped = set(), 0
+    """Same rep length, same cool-down, one rep fewer. A session with no rep to drop (2 reps, or `specific`'s
+    MP blocks) is scaled as a 0.9 check-in would instead, so the trim still does something."""
+    paces = load_settings()["paces"]
+    scaled, dropped = set(), 0
     for w in view.build_view(facts(), MON_W8)[1]:
         if w["phase"] in ("Rebuild", "Race week"):
             continue
         n = w["week"]
         checkins = {n - 1: {"week": n - 1, "feel": 2, "pain": 0, "note": ""}} if tired else {}
+        raw = next(wo for wo in weeks(w["start"])[n - 1]["workouts"] if "steps" in wo)
         plain = next(wo for wo in weeks(w["start"], checkins=checkins)[n - 1]["workouts"] if "steps" in wo)
         got = next(wo for wo in weeks(w["start"], checkins=checkins, trims=[trim(w["start"])])[n - 1]["workouts"]
                    if "steps" in wo)
-        assert got["steps"] == _minus_one(plain["steps"]), n
         assert got["km"] <= plain["km"]
-        dropped += got["steps"] != plain["steps"]
-        if got["steps"] == plain["steps"]:
-            seen_same.add(plain["type"])
-            assert got["km"] == plain["km"] and got["note"] == plain["note"]
-    assert {"specific", "strength"} <= seen_same  # Peak's MP blocks and the 2-rep taper session
+        if _minus_one(plain["steps"]) != plain["steps"]:
+            assert got["steps"] == _minus_one(plain["steps"]), n
+            dropped += 1
+        else:
+            expect = copy.deepcopy(raw)
+            sessions.scale_session(expect, 0.9, paces)  # min(check-in factor, 0.9): 0.9 either way here
+            assert (got["steps"], got["km"], got["note"]) == (expect["steps"], expect["km"], expect["note"]), n
+            if not tired:
+                assert got["steps"] != plain["steps"], n
+            scaled.add(plain["type"])
+    assert {"specific", "strength"} <= scaled  # Peak's MP blocks and the 2-rep taper session
     assert dropped >= 8
 
 

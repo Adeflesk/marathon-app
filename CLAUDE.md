@@ -101,7 +101,7 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   - Recovery: `Facts` also holds `wellness` and `trims`. `scale_and_shift_runs()` applies trims (the rest of the week at
     0.9 and a rep off the next session, or the next run easy at 0.8; never race week) from the trim's stored `start`
     (today, or tomorrow when today's run had synced when it was pressed), so the trimmed runs and the easy run stay
-    fixed once they sync,
+    fixed once they sync; a session with no rep to drop is scaled at min(factor, 0.9) instead,
     `recovery_state()` puts `recovery.state()` on each week, and strength follows a trim (loads held).
   - Also the questions pages ask of a built view: `missing_runs()`, `session_at()`, `move_warning()`.
   - Page data from a built view, pure too: `dashboard()` is everything This week shows (`next_run()`, `last_run()`,
