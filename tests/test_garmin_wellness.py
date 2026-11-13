@@ -1,5 +1,5 @@
 import json
-from datetime import date
+from datetime import date, timedelta
 
 import httpx
 import pytest
@@ -125,9 +125,8 @@ def test_rhr_not_refetched_when_known(garmin):
     assert asked == ["2026-11-12", "2026-11-13"]  # yesterday and today only; 11-11 already has rhr
 
 
-def test_rhr_fetch_capped_newest_first(garmin, monkeypatch):
-    monkeypatch.setattr(garmin_sync, "RHR_DAYS_PER_SYNC", 5)
-    sync(garmin, "2026-10-01", "2026-11-13")
+def test_rhr_fetch_capped_newest_first(garmin):
+    garmin_sync.sync_wellness(garmin.client, date(2026, 10, 1), date(2026, 11, 13), rhr_days=5)
     asked = [q["date"] for p, q in garmin.calls if p == HR]
     assert asked == ["2026-11-13", "2026-11-12", "2026-11-11", "2026-11-10", "2026-11-09"]
 
@@ -137,3 +136,56 @@ def test_range_calls_chunked(garmin):
     spans = [q for p, q in garmin.calls if p == SLEEP]
     assert len(spans) == 3 and spans[0]["startDate"] == "2026-09-01"
     assert spans[-1]["endDate"] == "2026-11-13"
+
+
+# --- sync(): runs then wellness, the quick limits, last_sync ---
+
+@pytest.fixture
+def full_garmin(garmin, monkeypatch):
+    """garmin's wellness fake plus an empty activity search, served to sync()'s own httpx.Client."""
+    inner = garmin.client._transport
+
+    def handler(req):
+        if req.url.path == "/activitylist-service/activities/search/activities":
+            garmin.calls.append((req.url.path, dict(req.url.params)))
+            return httpx.Response(200, json=[])
+        return inner.handle_request(req)
+
+    monkeypatch.setattr(garmin_sync.httpx, "Client",
+                        lambda timeout: REAL_CLIENT(transport=httpx.MockTransport(handler), timeout=timeout))
+    return garmin
+
+
+def starts(calls):
+    hrv = [p for p, _ in calls if p.startswith(HRV)]
+    return {"search": [q["startDate"] for p, q in calls if p.endswith("/search/activities")],
+            "hrv": [p[len(HRV):].split("/")[0] for p in hrv],
+            "sleep": [q["startDate"] for p, q in calls if p == SLEEP],
+            "weight": [p[len(WEIGHT):].split("/")[0] for p, _ in calls if p.startswith(WEIGHT)],
+            "rhr": [q["date"] for p, q in calls if p == HR]}
+
+
+def test_full_sync_starts_and_last_sync(full_garmin):
+    today = date.today()
+    since = today - timedelta(days=10)
+    assert garmin_sync.sync(since) == 0
+    got = starts(full_garmin.calls)
+    lead = (since - timedelta(days=garmin_sync.WELLNESS_LEAD)).isoformat()
+    assert got["search"] == [since.isoformat()]
+    assert got["hrv"][0] == got["sleep"][0] == got["weight"][0] == lead
+    assert len(got["hrv"]) == 2  # 43 days in chunks of 28
+    assert len(got["rhr"]) == garmin_sync.RHR_DAYS_PER_SYNC  # 43 days wanted, capped per sync
+    assert db.get_meta("last_sync")[:10] == today.isoformat()
+
+
+def test_quick_sync_one_call_per_range_endpoint_and_four_rhr_days(full_garmin):
+    today = date.today()
+    garmin_sync.sync(today - timedelta(days=60), **garmin_sync.QUICK)
+    got = starts(full_garmin.calls)
+    first = (today - timedelta(days=garmin_sync.QUICK_WELLNESS_DAYS)).isoformat()
+    assert garmin_sync.QUICK_WELLNESS_DAYS == 27 and garmin_sync.QUICK_RHR_DAYS == 4
+    assert got["hrv"] == got["sleep"] == got["weight"] == [first]  # one call each
+    assert got["rhr"][:2] == [today.isoformat(), (today - timedelta(days=1)).isoformat()]
+    assert len(got["rhr"]) == 4
+    assert got["search"] == [(today - timedelta(days=60)).isoformat()]
+    assert db.get_meta("last_sync") is not None

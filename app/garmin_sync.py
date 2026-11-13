@@ -193,16 +193,16 @@ def _range(client, since: date, until: date, path: str, params, pick, key, date_
     return seen
 
 
-def _rhr_days(since: date, until: date) -> list[str]:
+def _rhr_days(since: date, until: date, limit: int = RHR_DAYS_PER_SYNC) -> list[str]:
     """Days to ask resting HR for: the newest ones first, those in range with none stored, plus today and yesterday."""
     with db.conn() as c:
         have = {r["date"] for r in c.execute("SELECT date FROM wellness WHERE rhr IS NOT NULL")}
     want = [until - timedelta(days=i) for i in range((until - since).days + 1)]
     always = {until, until - timedelta(days=1)}
-    return [d.isoformat() for d in want if d in always or d.isoformat() not in have][:RHR_DAYS_PER_SYNC]
+    return [d.isoformat() for d in want if d in always or d.isoformat() not in have][:limit]
 
 
-def sync_wellness(client, since: date, until: date) -> int:
+def sync_wellness(client, since: date, until: date, rhr_days: int = RHR_DAYS_PER_SYNC) -> int:
     """Save HRV, sleep, weight (range endpoints) and resting HR (per day) from `since` to `until`; returns days touched."""
     days = _range(client, since, until, HRV_PATH, lambda s, e: None, lambda b: b.get("hrvSummaries") or [],
                   "hrv", "calendarDate", _hrv)
@@ -210,7 +210,7 @@ def sync_wellness(client, since: date, until: date) -> int:
                    lambda b: b or [], "sleep", "calendarDate", _sleep)
     days |= _range(client, since, until, WEIGHT_PATH, lambda s, e: {"includeAll": "true"},
                    lambda b: b.get("dailyWeightSummaries") or [], "weight", "summaryDate", _weight)
-    for day in _rhr_days(since, until):
+    for day in _rhr_days(since, until, rhr_days):
         r = garmin_api.get(client, RHR_PATH, {"date": day})
         if r.status_code >= 400:
             continue  # that day is asked again next sync
@@ -224,18 +224,22 @@ def sync_wellness(client, since: date, until: date) -> int:
     return len(days)
 
 
-QUICK = {"max_details": 4, "timeout": 8, "wellness_days": 3}  # sync on open: the page waits, so fetch less
+QUICK_WELLNESS_DAYS = 27  # sync on open: range endpoints from this many days back, one chunk (one call) each
+QUICK_RHR_DAYS = 4  # sync on open: resting-HR calls (one per day)
+QUICK = {"max_details": 4, "timeout": 8, "wellness_days": QUICK_WELLNESS_DAYS,
+         "rhr_days": QUICK_RHR_DAYS}  # sync on open: the page waits, so fetch less
 WELLNESS_LEAD = 32  # days of wellness before `since`, so the 30-day resting-HR baseline exists
 
 
 def sync(since: date, max_details: int = MAX_DETAILS_PER_SYNC, timeout: float = garmin_api.TIMEOUT,
-         wellness_days: int | None = None) -> int:
-    """Runs from `since`, then wellness from `since` - 32 days (or only the last `wellness_days`). Returns the
-    number of runs saved. Sets `last_sync` on success: weeks before it are known."""
+         wellness_days: int | None = None, rhr_days: int = RHR_DAYS_PER_SYNC) -> int:
+    """Runs from `since`, then wellness from `since` - 32 days (or only the last `wellness_days`), with at most
+    `rhr_days` resting-HR calls. Returns the number of runs saved. Sets `last_sync` on success: weeks before it
+    are known."""
     today = date.today()
     start = today - timedelta(days=wellness_days) if wellness_days is not None else since - timedelta(days=WELLNESS_LEAD)
     with httpx.Client(timeout=timeout) as client:
         n = sync_runs(client, since, max_details)
-        sync_wellness(client, start, today)
+        sync_wellness(client, start, today, rhr_days)
     db.set_meta("last_sync", datetime.now().isoformat(timespec="seconds"))
     return n
