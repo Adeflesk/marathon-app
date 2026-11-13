@@ -8,7 +8,9 @@ it matches (same date, km within 3 % or 0.2 km), so history is not counted twice
 import io
 import json
 import zipfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+
+import httpx
 
 from . import db, fitfile, garmin_api
 
@@ -201,3 +203,20 @@ def sync_wellness(client, since: date, until: date) -> int:
             _save_day(c, day, {"rhr": rhr}, {"rhr": {k: v for k, v in body.items() if k != "heartRateValues"}})
         days.add(day)
     return len(days)
+
+
+QUICK = {"max_details": 4, "timeout": 8, "wellness_days": 3}  # sync on open: the page waits, so fetch less
+WELLNESS_LEAD = 32  # days of wellness before `since`, so the 30-day resting-HR baseline exists
+
+
+def sync(since: date, max_details: int = MAX_DETAILS_PER_SYNC, timeout: float = garmin_api.TIMEOUT,
+         wellness_days: int | None = None) -> int:
+    """Runs from `since`, then wellness from `since` - 32 days (or only the last `wellness_days`). Returns the
+    number of runs saved. Sets `last_sync` on success: weeks before it are known."""
+    today = date.today()
+    start = today - timedelta(days=wellness_days) if wellness_days is not None else since - timedelta(days=WELLNESS_LEAD)
+    with httpx.Client(timeout=timeout) as client:
+        n = sync_runs(client, since, max_details)
+        sync_wellness(client, start, today)
+    db.set_meta("last_sync", datetime.now().isoformat(timespec="seconds"))
+    return n

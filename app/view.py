@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from math import gcd
 
-from . import ankle, db, fuel, moves, progress, progression, review, smashrun, strength
+from . import ankle, db, fuel, garmin_api, moves, progress, progression, review, strength
 from .config import load_settings, race_date
 from .pace_engine import MP_GAP, from_result, parse_time
 from .plan import DAYS, _half, feedback_factor, generate, volume_caps
@@ -36,6 +36,7 @@ class Facts:
     snacks: list[dict]
     fuel_days: set[str]
     last_sync: str | None
+    wellness: list[dict]  # daily HRV, resting HR, sleep, stress, weight; oldest first, values may be None
     equipment: dict
 
 
@@ -55,6 +56,7 @@ def load_facts() -> Facts:
         snacks=db.snacks(),
         fuel_days=db.fuel_days(),
         last_sync=db.get_meta("last_sync"),
+        wellness=db.wellness(),
         equipment=strength.load_equipment(),
     )
 
@@ -340,7 +342,7 @@ def move_warning(weeks: list[dict], session: str, day: date | None, orig: date |
 
 def dashboard(s: dict, weeks: list[dict], t: date, results: list[dict], token_expires: date | None,
               confirm: str = "", on: date | None = None, orig: date | None = None, by: int = 1) -> dict:
-    """What This week shows, from a built view. `token_expires` is None when there's no token or no issue date;
+    """What This week shows, from a built view. `token_expires` is None when there's no key or no expiry date;
     `confirm`, `on` and `orig` name a move waiting on a clash warning."""
     current = next((w for w in weeks if w["is_current"]), None)
     upcoming = weeks[0] if t < weeks[0]["start"] else current
@@ -364,7 +366,7 @@ def dashboard(s: dict, weeks: list[dict], t: date, results: list[dict], token_ex
         "hop_stage": st["hop_stage"],
         "move_warning": move_warning(weeks, confirm, on, orig, by),
         "last_summary": last_summary(weeks, s, st, results, t),
-        "token_warning": {"expires": token_expires, "days": left} if left is not None and left <= smashrun.TOKEN_WARN_DAYS
+        "token_warning": {"expires": token_expires, "days": left} if left is not None and left <= garmin_api.KEY_WARN_DAYS
         else None,
         "profile": profile(weeks),
     }

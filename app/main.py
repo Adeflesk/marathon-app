@@ -10,7 +10,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from . import ankle, db, fuel, garmin, moves, progress, smashrun, strength, view
+from . import ankle, db, fuel, garmin, garmin_api, garmin_sync, moves, progress, strength, view
 from .config import load_settings, race_date
 from .pace_engine import fmt_pace, fmt_time, pace_per_mi, parse_time
 from .plan import generate
@@ -144,15 +144,16 @@ def view_with_sync():
     t = today()
     missing = view.missing_runs(weeks, t)
     error = None
-    if missing and os.environ.get("SMASHRUN_TOKEN") and _sync_due():
+    no_wellness = not any(w["date"] == t.isoformat() for w in db.wellness())
+    if (missing or no_wellness) and os.environ.get("GARMIN_API_KEY") and _sync_due():
         db.set_meta("last_sync_try", datetime.now().isoformat(timespec="seconds"))
         msg = run_sync(quick=True)
         error = msg if msg.startswith("Sync failed") else None
         s, weeks = build_view()
         missing = view.missing_runs(weeks, t)
     names = ["Yesterday's" if d < t else "Today's" for d in missing]
-    line = (f"{names[0]} run isn't in Smashrun yet." if len(names) == 1
-            else "Yesterday's and today's runs aren't in Smashrun yet." if names else None)
+    line = (f"{names[0]} run isn't in Garmin yet." if len(names) == 1
+            else "Yesterday's and today's runs aren't in Garmin yet." if names else None)
     return s, weeks, {"error": error, "missing": line}
 
 
@@ -160,7 +161,7 @@ def view_with_sync():
 def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = "", prev: str = "",
               by: str = "1"):
     s, weeks, auto_sync = view_with_sync()
-    expires = smashrun.token_expiry() if os.environ.get("SMASHRUN_TOKEN") else None
+    expires = garmin_api.key_expiry() if os.environ.get("GARMIN_API_KEY") else None
     page = view.dashboard(s, weeks, today(), db.results(), expires, confirm, _day(on), _day(orig),
                           -1 if by == "-1" else 1)
     return templates.TemplateResponse(request, "index.html",
@@ -297,14 +298,14 @@ def backup_db():
 
 
 def run_sync(quick: bool = False) -> str:
-    """Sync from Smashrun; the message for the page, success or failure. `quick` (sync on open) fetches the
+    """Sync from Garmin; the message for the page, success or failure. `quick` (sync on open) fetches the
     details of only the newest few runs and gives up sooner, so the page doesn't hang; Sync fetches the rest."""
     s = load_settings()
     since = date.fromisoformat(s["plan_start"]) - timedelta(days=28)
     try:
-        n = smashrun.sync(since, **(smashrun.QUICK if quick else {}))
-        return f"Synced {n} runs from Smashrun."
-    except smashrun.SyncError as e:
+        n = garmin_sync.sync(since, **(garmin_sync.QUICK if quick else {}))
+        return f"Synced {n} runs from Garmin."
+    except garmin_api.SyncError as e:
         return f"Sync failed: {e}"
     except Exception as e:  # network errors etc.
         return f"Sync failed: {type(e).__name__}: {e}"

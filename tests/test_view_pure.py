@@ -10,7 +10,7 @@ TUE_W3 = date(2026, 11, 3)
 
 def facts(**over) -> view.Facts:
     base = dict(settings=load_settings(), actual={}, details={}, checkins={}, moves=[], goals=[], results=[],
-                logs=[], checks=[], tests=[], snacks=[], fuel_days=set(), last_sync=None,
+                logs=[], checks=[], tests=[], snacks=[], fuel_days=set(), last_sync=None, wellness=[],
                 equipment=strength.load_equipment())
     return view.Facts(**{**base, **over})
 

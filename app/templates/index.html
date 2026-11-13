@@ -158,10 +158,10 @@
 {% include "_sync_line.html" %}
 {% if token_warning %}{% set tw = token_warning %}
 <p class="notice" role="status" style="margin-top:12px">
-  {% if tw.days >= 0 %}Your Smashrun token runs out on {{ tw.expires.strftime('%A %-d %B') }}{{ ' (today)' if tw.days == 0 else ' (in ' ~ tw.days ~ ' day' ~ ('s' if tw.days != 1) ~ ')' }}.
-  {%- else %}Your Smashrun token ran out on {{ tw.expires.strftime('%A %-d %B') }}, so syncing will fail.{% endif %}
-  Generate a new one in Smashrun's API Explorer (client id <code>client</code>), then run
-  <code>fly secrets set SMASHRUN_TOKEN=… SMASHRUN_TOKEN_ISSUED={{ today.isoformat() }}</code>.
+  {% if tw.days >= 0 %}Your Garmin key runs out on {{ tw.expires.strftime('%A %-d %B') }}{{ ' (today)' if tw.days == 0 else ' (in ' ~ tw.days ~ ' day' ~ ('s' if tw.days != 1) ~ ')' }}.
+  {%- else %}Your Garmin key ran out on {{ tw.expires.strftime('%A %-d %B') }}, so syncing will fail.{% endif %}
+  Make a new key at connect.garmin.com/app/settings/personalApiToken, then run
+  <code>fly secrets set GARMIN_API_KEY=… GARMIN_API_KEY_EXPIRES=…</code> (the day it runs out, YYYY-MM-DD).
 </p>
 {% endif %}
 {% if move_warning %}{% set mw = move_warning %}
@@ -315,7 +315,7 @@
   <p class="mute" style="margin-top:4px"><a href="/strength?week={{ week.week }}">See the strength sessions</a>.</p>
   {% endif %}
   <div class="actions" style="margin-top:18px">
-    <form method="post" action="/sync"><button class="button" type="submit">Sync from Smashrun</button></form>
+    <form method="post" action="/sync"><button class="button" type="submit">Sync from Garmin</button></form>
     <a class="button quiet" href="/workouts/week/{{ week.week }}.zip">Download the week's watch files</a>
   </div>
 </section>
