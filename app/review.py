@@ -1,6 +1,6 @@
 """Post-run review: what a synced run says about the planned session.
 
-Inputs are the planned workout, the run summary ({"km", "seconds"}) and Smashrun's detail
+Inputs are the planned workout, the run summary ({"km", "seconds"}) and the run's detail
 ({"splits": km splits, "laps": laps}), where splits and laps carry cumulative distance and time.
 Paces are seconds per km. Nothing here is stored; reviews are recomputed like the plan.
 """
@@ -13,7 +13,7 @@ ON_PACE_S = 10  # a rep within 10 s/km of target counts as on pace (the watch's 
 
 
 def splits(raw: list[dict]) -> list[dict]:
-    """Smashrun km splits (cumulative) as [{km, pace, hr}] per split."""
+    """Stored km splits (cumulative) as [{km, pace, hr}] per split."""
     out, dist, secs = [], 0.0, 0.0
     for s in raw:
         d, t = s["distance"] - dist, s["seconds"] - secs
@@ -50,7 +50,7 @@ def _drift_words(d: float | None) -> str:
 
 
 def _laps(laps: list[dict]) -> list[dict]:
-    """Smashrun laps (cumulative) as [{type, km, seconds}] per lap."""
+    """Stored laps (cumulative) as [{type, km, seconds}] per lap."""
     out, dist, dur = [], 0.0, 0.0
     for lap in laps:
         d, t = lap["endDistance"] - dist, lap["endDuration"] - dur

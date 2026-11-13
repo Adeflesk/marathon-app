@@ -25,20 +25,31 @@ def conn() -> Iterator[sqlite3.Connection]:
         c.close()
 
 
-def backup_bytes() -> bytes:
-    """A consistent snapshot of the whole database, as the bytes of a SQLite file."""
+SECRET_META = ("garmin_token", "garmin_token_exp")  # left out of a backup
+
+
+def backup_file() -> str:
+    """A consistent snapshot of the whole database in a temp SQLite file (the caller removes it), without the
+    cached Garmin access token. Vacuumed, so the deleted rows don't linger in free pages."""
     import tempfile
 
-    with tempfile.TemporaryDirectory() as d:
-        target = Path(d) / "backup.db"
+    fd, target = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
         src = sqlite3.connect(DB_PATH)
         dst = sqlite3.connect(target)
         try:
             src.backup(dst)
+            dst.execute(f"DELETE FROM meta WHERE key IN ({','.join('?' * len(SECRET_META))})", SECRET_META)
+            dst.commit()
+            dst.execute("VACUUM")
         finally:
             dst.close()
             src.close()
-        return target.read_bytes()
+    except BaseException:
+        os.remove(target)
+        raise
+    return target
 
 
 def init() -> None:
@@ -59,6 +70,14 @@ def init() -> None:
                 id INTEGER PRIMARY KEY,
                 splits TEXT NOT NULL,
                 laps TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS run_files (
+                id INTEGER PRIMARY KEY,
+                fit BLOB NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS run_source (
+                id INTEGER PRIMARY KEY,
+                source TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS checkins (
                 week INTEGER PRIMARY KEY,
@@ -116,12 +135,25 @@ def init() -> None:
                 key TEXT PRIMARY KEY,
                 value TEXT
             );
+            CREATE TABLE IF NOT EXISTS wellness (
+                date TEXT PRIMARY KEY,
+                hrv_night REAL, hrv_week_avg REAL, hrv_low REAL, hrv_high REAL,
+                rhr INTEGER, sleep_s INTEGER, sleep_score INTEGER, stress_avg INTEGER, weight_kg REAL,
+                raw TEXT
+            );
             CREATE TABLE IF NOT EXISTS moves (
                 date TEXT NOT NULL,
                 session TEXT NOT NULL,
                 new_date TEXT,
                 created TEXT,
                 PRIMARY KEY (date, session)
+            );
+            CREATE TABLE IF NOT EXISTS recovery_trims (
+                date TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                start TEXT NOT NULL,
+                created TEXT,
+                PRIMARY KEY (date, kind)
             );
             """
         )
@@ -142,6 +174,14 @@ def actual_by_date() -> dict[str, dict]:
     return out
 
 
+def wellness() -> list[dict]:
+    """Daily wellness rows (HRV, resting HR, sleep, stress, weight), oldest first, without `raw`. NULL = missing."""
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT date, hrv_night, hrv_week_avg, hrv_low, hrv_high, rhr, sleep_s, sleep_score, stress_avg, "
+            "weight_kg FROM wellness ORDER BY date")]
+
+
 def checkins() -> dict[int, dict]:
     """Weekly check-ins by week number."""
     with conn() as c:
@@ -149,7 +189,7 @@ def checkins() -> dict[int, dict]:
 
 
 def run_details(ids: list[int]) -> dict[int, dict]:
-    """Stored Smashrun km splits and laps by activity id: {id: {"splits": [...], "laps": [...]}}."""
+    """Stored km splits and laps by activity id: {id: {"splits": [...], "laps": [...]}}."""
     if not ids:
         return {}
     with conn() as c:
@@ -279,3 +319,17 @@ def toggle_fuel(day: str) -> None:
 def fuel_days() -> set[str]:
     with conn() as c:
         return {r["date"] for r in c.execute("SELECT date FROM fuel_logs")}
+
+
+def add_trim(day: str, kind: str, start: str) -> None:
+    """The user took the recovery advice on `day`: kind "trim" (`start` to Sunday at 0.9) or "easy" (the next run
+    from `start` easy). `start` is fixed here, so a run syncing later never moves the choice on."""
+    with conn() as c:
+        c.execute("INSERT OR IGNORE INTO recovery_trims (date, kind, start, created) VALUES (?,?,?,?)",
+                  (day, kind, start, datetime.now().isoformat(timespec="seconds")))
+
+
+def trims() -> list[dict]:
+    """Recovery choices taken, oldest first: [{"date", "kind", "start"}]."""
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT date, kind, start FROM recovery_trims ORDER BY date, kind")]

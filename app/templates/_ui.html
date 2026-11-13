@@ -24,14 +24,18 @@
 </p>
 {%- endmacro %}
 
-{# Move to tomorrow, and the Moved/Skipped note with Undo. `session` is "run", "A" or "B". #}
-{% macro move_form(item, session, cls="linkish") -%}
+{# Move to tomorrow and Move a day earlier (each only when allowed), and the Moved/Skipped note with Undo.
+   `session` is "run", "A" or "B". `forward` false leaves out Move to tomorrow. #}
+{% macro move_form(item, session, cls="linkish", forward=True) -%}
+{% for by, word, ok in (("1", "Move to tomorrow", forward and item.movable), ("-1", "Move a day earlier", item.movable_back)) if ok %}
 <form method="post" action="/move" class="inline">
   <input type="hidden" name="date" value="{{ item.date.isoformat() }}">
   <input type="hidden" name="orig" value="{{ item.orig_date.isoformat() }}">
   <input type="hidden" name="session" value="{{ session }}">
-  <button class="{{ cls }}" type="submit">Move to tomorrow</button>
+  <input type="hidden" name="by" value="{{ by }}">
+  <button class="{{ cls }}" type="submit">{{ word }}</button>
 </form>
+{% endfor %}
 {%- endmacro %}
 
 {% macro moved_note(item, session) -%}

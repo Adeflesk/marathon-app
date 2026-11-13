@@ -10,14 +10,16 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from math import gcd
 
-from . import ankle, db, fuel, moves, progress, progression, review, smashrun, strength
+from . import ankle, db, fuel, garmin_api, moves, progress, progression, recovery, review, strength
 from .config import load_settings, race_date
 from .pace_engine import MP_GAP, from_result, parse_time
-from .plan import DAYS, _half, feedback_factor, generate, volume_caps
-from .sessions import scale_session
+from .plan import DAYS, EASY_NOTE, _half, feedback_factor, generate, volume_caps
+from .sessions import drop_rep, scale_session
 
 GOAL_SETTINGS = "settings"  # a stored goal meaning "back to whatever settings.json says"
 SESSIONS = {"run", "A", "B"}  # what a move can apply to: a run, or strength session A or B
+RECOVERY_FACTOR = 0.9  # the recovery trim: the rest of its week as a "tired" check-in
+RECOVERY_EASY = 0.8  # "make the next run easy": that run at this share of its planned km
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,8 @@ class Facts:
     snacks: list[dict]
     fuel_days: set[str]
     last_sync: str | None
+    wellness: list[dict]  # daily HRV, resting HR, sleep, stress, weight; oldest first, values may be None
+    trims: list[dict]  # recovery choices taken: {"date": ISO pressed, "kind": "trim" | "easy", "start": ISO}
     equipment: dict
 
 
@@ -55,6 +59,8 @@ def load_facts() -> Facts:
         snacks=db.snacks(),
         fuel_days=db.fuel_days(),
         last_sync=db.get_meta("last_sync"),
+        wellness=db.wellness(),
+        trims=db.trims(),
         equipment=strength.load_equipment(),
     )
 
@@ -71,6 +77,7 @@ def build_view(f: Facts, t: date) -> tuple[dict, list[dict]]:
     moved = moves.index(f.moves)
     scale_and_shift_runs(weeks, s, f, t, moved)
     join_actuals(weeks, s, f, t, st, moved)
+    recovery_state(weeks, s, f, t)
     mark_done_and_movable(weeks, s, f, t)
     return s, weeks
 
@@ -125,10 +132,61 @@ def volume_guard(weeks: list[dict], actual: dict, checkins: dict, t: date, base:
     return volume_caps(planned, run, known, base), known
 
 
+def _run_day(wo: dict, moved: dict) -> date | None:
+    """The day a run falls on after any move, or None when it's skipped."""
+    key = (wo["date"], "run")
+    return moved[key] if key in moved else wo["date"]
+
+
+def _week_of(weeks: list[dict], d: date) -> dict | None:
+    return next((w for w in weeks if w["start"] <= d < w["start"] + timedelta(days=7)), None)
+
+
+def trim_days(weeks: list[dict], trims: list[dict]) -> dict[int, date]:
+    """Week number -> the day a recovery trim starts in it (the earliest, if two): the day it was taken, or the
+    next one when that day's run had already synced (decided when it was stored). Never a Race week."""
+    out: dict[int, date] = {}
+    for tr in trims:
+        d = date.fromisoformat(tr["start"])
+        w = _week_of(weeks, d)
+        if tr["kind"] == "trim" and w and w["phase"] != "Race week":
+            out[w["week"]] = min(out.get(w["week"], d), d)
+    return out
+
+
+def easy_runs(weeks: list[dict], trims: list[dict], moved: dict) -> set[int]:
+    """The runs "make the next run easy" applies to (by id): for each, the first run on or after its start day
+    that isn't skipped or the race and has km, unless that run is in Race week. Fixed by the stored start, so
+    the same run stays easy after it syncs."""
+    out = set()
+    for tr in (tr for tr in trims if tr["kind"] == "easy"):
+        d = date.fromisoformat(tr["start"])
+        cands = [(day, -wo["km"], w, wo) for w in weeks for wo in w["workouts"]
+                 for day in [_run_day(wo, moved)]
+                 if wo["type"] != "race" and wo["km"] > 0 and day is not None and day >= d]
+        if cands:
+            _, _, w, wo = min(cands, key=lambda c: c[:2])
+            if w["phase"] != "Race week":
+                out.add(id(wo))
+    return out
+
+
+def _make_easy(wo: dict, factor: float) -> None:
+    """The run becomes an easy one at `factor` of its planned km: a session loses its reps, a long run its MP."""
+    for k in ("steps", "mp_km", "hard"):
+        wo.pop(k, None)
+    wo.update(type="easy", km=_half(wo["km"] * factor), pace="easy", note=EASY_NOTE)
+
+
 def scale_and_shift_runs(weeks: list[dict], s: dict, f: Facts, t: date, moved: dict) -> None:
-    """Scale each week's runs by the smaller of last week's check-in and the missed-week guard, add the fuel
-    notes, then apply moves (relocate takes a run across Sunday). Strength follows the check-in only."""
+    """Scale each week's runs by the smaller of last week's check-in and the missed-week guard, apply the
+    recovery choices taken (the trim: the rest of its week at 0.9 at most and a rep off the next session, or that
+    session at 0.9 when it has no rep to spare; "easy":
+    the next run easy), add the fuel notes, then apply moves (relocate takes a run across Sunday). Strength
+    follows the check-in and the trim."""
     caps, synced = volume_guard(weeks, f.actual, f.checkins, t, s["base_weekly_km"], f.last_sync)
+    trimmed = trim_days(weeks, f.trims)
+    easy = easy_runs(weeks, f.trims, moved)
     for w in weeks:
         factor = feedback_factor(f.checkins.get(w["week"] - 1))
         w["factor"] = factor
@@ -140,12 +198,34 @@ def scale_and_shift_runs(weeks: list[dict], s: dict, f: Facts, t: date, moved: d
         if cap and w["target_km"] and cap["km"] / w["target_km"] < factor:
             run_factor = cap["km"] / w["target_km"]
             w["guard"] = {**cap, "planned": w["target_km"]}
+        w["recovery_trim"] = trim_from = trimmed.get(w["week"])
+        rep_off = trim_from is not None  # the trim's rep is still to come off the next quality session
+        sunday = w["start"] + timedelta(days=6)
         for wo in w["workouts"]:
-            if run_factor != 1.0 and wo["type"] != "race":
-                if "steps" in wo:  # fewer reps, so the day, the note and the .fit all agree
-                    scale_session(wo, run_factor, s["paces"])
-                else:
-                    wo["km"] = _half(wo["km"] * run_factor)
+            day = _run_day(wo, moved)
+            # the trim reaches the runs from its start day to Sunday, synced or not
+            in_trim = trim_from is not None and day is not None and trim_from <= day <= sunday
+            quality = in_trim and rep_off and "steps" in wo and wo["type"] != "strides"
+            # the trim's session keeps the check-in's (or guard's) scaling and just loses one rep, so its rep
+            # length and cool-down match the session without the trim
+            wo_factor = min(run_factor, RECOVERY_FACTOR) if in_trim and not quality else run_factor
+            if id(wo) in easy:  # replaces the run, never below what a 0.8 check-in would do
+                _make_easy(wo, min(RECOVERY_EASY, wo_factor))
+                if quality:  # the trim's session is gone, so its rep off goes with it
+                    rep_off = False
+            else:
+                unscaled = copy.deepcopy(wo) if quality else None
+                if wo_factor != 1.0 and wo["type"] != "race":
+                    if "steps" in wo:  # fewer reps, so the day, the note and the .fit all agree
+                        scale_session(wo, wo_factor, s["paces"])
+                    else:
+                        wo["km"] = _half(wo["km"] * wo_factor)
+                if quality:
+                    rep_off = False
+                    if not drop_rep(wo, s["paces"]):  # no rep to spare: scale it as a 0.9 check-in would
+                        wo.clear()
+                        wo.update(unscaled)
+                        scale_session(wo, min(run_factor, RECOVERY_FACTOR), s["paces"])
             # fuel practice on long runs of 90 minutes or more, from the km left after any trim
             wo["fuel"] = fuel.long_run_note(wo["km"], wo.get("mp_km", 0), s["paces"]["long"]) \
                 if wo["type"] == "long" else None
@@ -189,6 +269,45 @@ def join_actuals(weeks: list[dict], s: dict, f: Facts, t: date, st: dict, moved:
     moves.relocate(weeks)  # strength sessions moved across Sunday, keeping their own week's prescription
 
 
+def recovery_runs(weeks: list[dict], f: Facts, s: dict) -> list[recovery.Run]:
+    """Every synced day with details, as recovery judges it: its main run's splits and drift, and the kind of run
+    planned that day after moves (strides, a session with its review verdict, else easy; unplanned = easy).
+    A session without rep laps has no verdict, so it can't confirm or clear anything."""
+    lead: dict[date, dict] = {}
+    for wo in (wo for w in weeks for wo in w["workouts"] if not wo.get("skipped")):
+        if wo["date"] not in lead or wo["km"] > lead[wo["date"]]["km"]:
+            lead[wo["date"]] = wo
+    out: list[recovery.Run] = []
+    for d, a in sorted(f.actual.items()):
+        detail = f.details.get(a["main"]["id"])
+        if not detail:
+            continue
+        day = date.fromisoformat(d)
+        wo = lead.get(day)
+        sp = review.splits(detail.get("splits") or [])
+        kind, verdict = "easy", None
+        if wo and wo["type"] == "strides":
+            kind = "strides"
+        elif wo and "steps" in wo:
+            kind = "quality"
+            rv = wo.get("review")
+            verdict = rv["verdict"] if rv and rv["reps"] else None
+        out.append({"date": day, "kind": kind, "splits": sp, "drift": review.drift(sp), "verdict": verdict})
+    return out
+
+
+def recovery_state(weeks: list[dict], s: dict, f: Facts, t: date) -> None:
+    """Today's recovery state, the same dict on every week. Its HR baseline uses the settings' easy pace (as
+    Progress's fitness trend does), so a new result doesn't move it. No button in Race week."""
+    rs = recovery.state(f.wellness, recovery_runs(weeks, f, s), f.trims, t, f.settings["paces"]["easy"])
+    current = next((w for w in weeks if w["start"] <= t < w["start"] + timedelta(days=7)), None)
+    rs["race_week"] = bool(current) and current["phase"] == "Race week"
+    if rs["race_week"]:
+        rs["offer"] = None
+    for w in weeks:
+        w["recovery"] = rs
+
+
 def mark_done_and_movable(weeks: list[dict], s: dict, f: Facts, t: date) -> None:
     race = race_date(s)
     for w in weeks:
@@ -198,13 +317,17 @@ def mark_done_and_movable(weeks: list[dict], s: dict, f: Facts, t: date) -> None
             item["done"] = (item.get("actual_km") is not None if kind == "run"
                             else any(ex.get("log") for ex in item.get("exercises", [])))
             item["movable"] = _movable(item, weeks, t, race)
+            item["movable_back"] = _movable(item, weeks, t, race, by=-1)
 
 
-def _movable(item: dict, weeks: list[dict], t: date, race: date) -> bool:
-    """From today on, not skipped, not done yet (a synced run or any strength log), and tomorrow is allowed."""
+def _movable(item: dict, weeks: list[dict], t: date, race: date, by: int = 1) -> bool:
+    """From today on, not skipped, not done yet (a synced run or any strength log), and the new day is allowed:
+    tomorrow for `by` 1; for -1 the day before, which mustn't have passed."""
     if item["date"] < t or item.get("skipped") or item.get("type") == "race" or item["done"]:
         return False
-    return moves.can_move(item["date"], weeks, race)
+    if item["date"] + timedelta(days=by) < t:
+        return False
+    return moves.can_move(item["date"], weeks, race, by)
 
 
 # --- ankle and strength ---
@@ -269,6 +392,12 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict |
     ctx = {"factor": w["factor"], "wed_bad": wed_bad, "ankle_flag": flagged(a_day), "hop_stage": hop_a,
            "balance_stage": balance, "restart": st["restart"], "days": s["strength_days"]}
     w["strength"] = strength.sessions_for_week(w, eq, ctx)
+    # after a recovery trim, sessions on or after its day are trimmed like a "tired" check-in, loads held
+    trim_from = w.get("recovery_trim")
+    rec = {"factor": min(w["factor"], RECOVERY_FACTOR), "recovery": True, "checkin_factor": w["factor"]}
+    if trim_from is not None:
+        held = {x["key"]: x for x in strength.sessions_for_week(w, eq, {**ctx, **rec})}
+        w["strength"] = [held[x["key"]] if on(x["key"]) >= trim_from else x for x in w["strength"]]
     pctx = {"phase": w["phase"], "cutback": w["phase"] == "Cutback", "factor": w["factor"],
             "last_any_log": st["last_any_log"]}
     for sess in w["strength"]:
@@ -276,6 +405,8 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict |
         sess["day"] = sess["date"].strftime("%a")
         day = sess["date"].isoformat()
         pctx["ankle_flag"] = flagged(sess["date"])
+        trimmed = trim_from is not None and sess["date"] >= trim_from
+        pctx.update(rec if trimmed else {"factor": w["factor"], "recovery": False, "checkin_factor": w["factor"]})
         for ex in sess["exercises"]:
             history = st["by_ex"].get(ex["key"], [])
             ex["suggestion"] = progression.suggest(ex, history, pctx, eq, today=t)
@@ -319,24 +450,24 @@ def session_at(weeks: list[dict], day: date, session: str, orig: date | None = N
                  if kind == session and (orig is None or item["orig_date"] == orig)), None)
 
 
-def move_warning(weeks: list[dict], session: str, day: date | None, orig: date | None) -> dict | None:
-    """The clash warning to show after a Move to tomorrow, if that clash still holds."""
+def move_warning(weeks: list[dict], session: str, day: date | None, orig: date | None, by: int = 1) -> dict | None:
+    """The clash warning to show after a move (`by` 1 = tomorrow, -1 = a day earlier), if that clash still holds."""
     if session not in SESSIONS or day is None:
         return None
     item = session_at(weeks, day, session, orig)
-    blocker = moves.clash(weeks, session, day) if item else None
+    blocker = moves.clash(weeks, session, day, by) if item else None
     if blocker is None:
         return None
     kind = "run" if "type" in blocker else blocker["key"]
     return {"session": session, "date": day, "orig": item["orig_date"], "name": moves.session_name(session, item),
-            "blocker": moves.session_name(kind, blocker), "blocker_day": blocker["date"]}
+            "blocker": moves.session_name(kind, blocker), "blocker_day": blocker["date"], "by": by}
 
 
 # --- page data ---
 
 def dashboard(s: dict, weeks: list[dict], t: date, results: list[dict], token_expires: date | None,
-              confirm: str = "", on: date | None = None, orig: date | None = None) -> dict:
-    """What This week shows, from a built view. `token_expires` is None when there's no token or no issue date;
+              confirm: str = "", on: date | None = None, orig: date | None = None, by: int = 1) -> dict:
+    """What This week shows, from a built view. `token_expires` is None when there's no key or no expiry date;
     `confirm`, `on` and `orig` name a move waiting on a clash warning."""
     current = next((w for w in weeks if w["is_current"]), None)
     upcoming = weeks[0] if t < weeks[0]["start"] else current
@@ -358,11 +489,12 @@ def dashboard(s: dict, weeks: list[dict], t: date, results: list[dict], token_ex
         "tests": ankle_tests(upcoming, st, t),
         "ankle_flag": st["flag_until"],
         "hop_stage": st["hop_stage"],
-        "move_warning": move_warning(weeks, confirm, on, orig),
+        "move_warning": move_warning(weeks, confirm, on, orig, by),
         "last_summary": last_summary(weeks, s, st, results, t),
-        "token_warning": {"expires": token_expires, "days": left} if left is not None and left <= smashrun.TOKEN_WARN_DAYS
+        "token_warning": {"expires": token_expires, "days": left} if left is not None and left <= garmin_api.KEY_WARN_DAYS
         else None,
         "profile": profile(weeks),
+        "recovery": weeks[0]["recovery"],
     }
 
 

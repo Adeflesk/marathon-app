@@ -105,3 +105,29 @@ def test_session_names(weeks):
     assert moves.session_name("run", run_on(weeks, date(2026, 10, 25))) == "long run"
     assert moves.session_name("run", run_on(weeks, date(2026, 10, 28))) == "speed session"
     assert moves.session_name("A", weeks[0]["strength"][1]) == "Strength A"
+
+
+def test_clash_a_day_earlier(weeks):
+    # Saturday's easy run onto Friday, a rest day: fine
+    assert moves.clash(weeks, "run", date(2026, 10, 24), by=-1) is None
+    # Sunday's long run onto Saturday's easy run: a run onto a run
+    assert moves.clash(weeks, "run", date(2026, 10, 25), by=-1)["date"] == date(2026, 10, 24)
+
+
+def test_away_sunday_both_runs_earlier(weeks):
+    apply_runs(weeks, [row("2026-10-24", "run", "2026-10-23"), row("2026-10-25", "run", "2026-10-24")])
+    days = {wo["type"]: wo["date"] for wo in weeks[0]["workouts"] if wo.get("moved_from")}
+    assert days == {"easy": date(2026, 10, 23), "long": date(2026, 10, 24)}
+    assert date(2026, 10, 25) not in [wo["date"] for wo in weeks[0]["workouts"]]
+
+
+def test_relocate_monday_into_sunday(weeks):
+    apply_runs(weeks, [row("2026-10-26", "run", "2026-10-25")])
+    assert date(2026, 10, 25) not in [wo["date"] for wo in weeks[1]["workouts"]]
+    assert sum(wo["date"] == date(2026, 10, 25) for wo in weeks[0]["workouts"]) == 2
+
+
+def test_can_move_earlier_stops_at_plan_start(weeks):
+    race = race_date(load_settings())
+    assert not moves.can_move(D0, weeks, race, by=-1)
+    assert moves.can_move(D0 + timedelta(days=1), weeks, race, by=-1)

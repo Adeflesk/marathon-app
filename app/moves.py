@@ -28,11 +28,12 @@ def shift(item: dict, session: str, moved: dict) -> None:
 
 
 def relocate(weeks) -> None:
-    """Put sessions moved past their week's Sunday into the week holding their new date; keep every week in date order."""
+    """Put sessions moved out of their week (past Sunday, or before Monday) into the week holding their new date;
+    keep every week in date order."""
     for field in ("workouts", "strength"):
         for w in weeks:
             end = w["start"] + timedelta(days=6)
-            gone = [x for x in w.get(field, []) if x["date"] > end]
+            gone = [x for x in w.get(field, []) if not w["start"] <= x["date"] <= end]
             for x in gone:
                 home = next((h for h in weeks if h["start"] <= x["date"] <= h["start"] + timedelta(days=6)), None)
                 if home is None:  # outside the plan; the routes never allow this
@@ -57,12 +58,12 @@ def _hard(wo: dict) -> bool:
     return wo["type"] in ("long", "race") or "steps" in wo
 
 
-def clash(weeks, session: str, day: date) -> dict | None:
-    """What blocks moving `session` from `day` to the next day, or None.
+def clash(weeks, session: str, day: date, by: int = 1) -> dict | None:
+    """What blocks moving `session` from `day` to `by` days later (1 = the next day, -1 = the day before), or None.
 
     A long run or speed session blocks anything; a run blocks a run; a strength session blocks the other one.
     """
-    for kind, item in day_items(weeks, day + timedelta(days=1)):
+    for kind, item in day_items(weeks, day + timedelta(days=by)):
         if kind == "run" and (_hard(item) or session == "run"):
             return item
         if kind in STRENGTH and session in STRENGTH and kind != session:
@@ -70,10 +71,10 @@ def clash(weeks, session: str, day: date) -> dict | None:
     return None
 
 
-def can_move(day: date, weeks, race: date) -> bool:
-    """Tomorrow is before race day and inside the plan."""
-    last = weeks[-1]["start"] + timedelta(days=6)
-    return day + timedelta(days=1) < race and day + timedelta(days=1) <= last
+def can_move(day: date, weeks, race: date, by: int = 1) -> bool:
+    """The new day (`by` days from `day`) is before race day and inside the plan."""
+    new = day + timedelta(days=by)
+    return weeks[0]["start"] <= new < race and new <= weeks[-1]["start"] + timedelta(days=6)
 
 
 def session_name(session: str, item: dict) -> str:

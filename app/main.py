@@ -9,8 +9,9 @@ from urllib.parse import urlencode, urlsplit
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.background import BackgroundTask
 
-from . import ankle, db, fuel, garmin, moves, progress, smashrun, strength, view
+from . import ankle, db, fuel, garmin, garmin_api, garmin_sync, moves, progress, strength, view
 from .config import load_settings, race_date
 from .pace_engine import fmt_pace, fmt_time, pace_per_mi, parse_time
 from .plan import generate
@@ -114,12 +115,17 @@ templates.env.filters["pace_mi"] = lambda s: fmt_pace(pace_per_mi(s))
 templates.env.filters["km"] = fmt_km
 templates.env.filters["hms"] = fmt_time
 templates.env.filters["clock"] = lambda s: fmt_time(s)[2:] if s < 3600 else fmt_time(s)  # 25:30, 1:55:10
+templates.env.filters["dayx"] = lambda d, d0: (date.fromisoformat(d) - date.fromisoformat(d0)).days  # chart x
 templates.env.filters["longdate"] = lambda d: date.fromisoformat(d).strftime("%-d %b")
 templates.env.globals["band"] = band_segments
 
 
 def today() -> date:
     return date.today()
+
+
+def now() -> datetime:
+    return datetime.now()
 
 
 def build_view():
@@ -129,6 +135,7 @@ def build_view():
 
 SYNC_PAGES = ("/", "/progress")  # the pages that sync when they open
 SYNC_GAP = timedelta(minutes=15)
+WELLNESS_UNTIL = 12  # local hour: before it, a missing row or HRV for today also triggers the sync on open
 
 
 def _sync_due() -> bool:
@@ -138,29 +145,35 @@ def _sync_due() -> bool:
 
 
 def view_with_sync():
-    """build_view, after a sync when a run from yesterday or today isn't in yet (at most every 15 minutes).
+    """build_view, after a sync when a run from yesterday or today isn't in yet, or before noon when today's
+    wellness row or its HRV isn't (at most every 15 minutes).
     Returns the view and the top line: a failed sync's reason, and which run is still missing."""
     s, weeks = build_view()
     t = today()
     missing = view.missing_runs(weeks, t)
     error = None
-    if missing and os.environ.get("SMASHRUN_TOKEN") and _sync_due():
+    row = next((w for w in db.wellness() if w["date"] == t.isoformat()), None)
+    # last night's HRV can land after resting HR, so the morning keeps asking; after midday only a run triggers
+    no_wellness = now().hour < WELLNESS_UNTIL and (row is None or row.get("hrv_night") is None)
+    if (missing or no_wellness) and os.environ.get("GARMIN_API_KEY") and _sync_due():
         db.set_meta("last_sync_try", datetime.now().isoformat(timespec="seconds"))
         msg = run_sync(quick=True)
         error = msg if msg.startswith("Sync failed") else None
         s, weeks = build_view()
         missing = view.missing_runs(weeks, t)
     names = ["Yesterday's" if d < t else "Today's" for d in missing]
-    line = (f"{names[0]} run isn't in Smashrun yet." if len(names) == 1
-            else "Yesterday's and today's runs aren't in Smashrun yet." if names else None)
+    line = (f"{names[0]} run isn't in Garmin yet." if len(names) == 1
+            else "Yesterday's and today's runs aren't in Garmin yet." if names else None)
     return s, weeks, {"error": error, "missing": line}
 
 
 @app.get("/")
-def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = "", prev: str = ""):
+def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", orig: str = "", prev: str = "",
+              by: str = "1"):
     s, weeks, auto_sync = view_with_sync()
-    expires = smashrun.token_expiry() if os.environ.get("SMASHRUN_TOKEN") else None
-    page = view.dashboard(s, weeks, today(), db.results(), expires, confirm, _day(on), _day(orig))
+    expires = garmin_api.key_expiry() if os.environ.get("GARMIN_API_KEY") else None
+    page = view.dashboard(s, weeks, today(), db.results(), expires, confirm, _day(on), _day(orig),
+                          -1 if by == "-1" else 1)
     return templates.TemplateResponse(request, "index.html",
                                       {**page, "auto_sync": auto_sync, "msg": msg, "prev_open": prev == "1"})
 
@@ -185,6 +198,8 @@ def progress_page(request: Request, msg: str = ""):
         "s": s, "msg": msg, "auto_sync": auto_sync, "today": t, "verdict": verdict, "options": options, "week": current,
         "n_weeks": len(weeks), "why": progress.why_rows(weeks, t, ref_pace),
         "fitness": progress.fitness_trend(weeks, ref_pace), "ref_pace": ref_pace,
+        "recovery_trend": progress.recovery_trend(db.wellness(), t),
+        "trend_start": (t - timedelta(days=progress.TREND_DAYS - 1)).isoformat(),
         "long_runs": progress.long_runs(weeks), "plan": progress.plan_bars(weeks),
         "ankle": progress.ankle_table(weeks, st["tests"]), "ankle_state": st,
         "summaries": progress.summaries(weeks, s, st, db.results(), t),
@@ -287,22 +302,22 @@ def workouts_zip(n: int):
 
 @app.get("/backup.db")
 def backup_db():
-    return Response(
-        db.backup_bytes(),
-        media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="marathon-{date.today().isoformat()}.db"'},
-    )
+    """The database as a file download, streamed from a temp snapshot that's removed once sent."""
+    path = db.backup_file()
+    return FileResponse(path, media_type="application/octet-stream",
+                        filename=f"marathon-{date.today().isoformat()}.db",
+                        background=BackgroundTask(os.remove, path))
 
 
 def run_sync(quick: bool = False) -> str:
-    """Sync from Smashrun; the message for the page, success or failure. `quick` (sync on open) fetches the
+    """Sync from Garmin; the message for the page, success or failure. `quick` (sync on open) fetches the
     details of only the newest few runs and gives up sooner, so the page doesn't hang; Sync fetches the rest."""
     s = load_settings()
     since = date.fromisoformat(s["plan_start"]) - timedelta(days=28)
     try:
-        n = smashrun.sync(since, **(smashrun.QUICK if quick else {}))
-        return f"Synced {n} runs from Smashrun."
-    except smashrun.SyncError as e:
+        n = garmin_sync.sync(since, **(garmin_sync.QUICK if quick else {}))
+        return f"Synced {n} runs from Garmin."
+    except garmin_api.SyncError as e:
         return f"Sync failed: {e}"
     except Exception as e:  # network errors etc.
         return f"Sync failed: {type(e).__name__}: {e}"
@@ -454,6 +469,24 @@ def fuel_tick(day: str = Form("", alias="date")):
     return _back("week")
 
 
+@app.post("/recovery")
+def recovery_take(kind: str = Form("")):
+    """Take the recovery advice on offer: "trim" (the rest of this week at 0.9, a rep off the next session) or
+    "easy" (the next run easy). Stored only when the page offers exactly that button, and never in Race week.
+    It starts today, or tomorrow when today's run is already in."""
+    t = today()
+    _, weeks = build_view()
+    current = next((w for w in weeks if w["start"] <= t < w["start"] + timedelta(days=7)), None)
+    if current and current["phase"] == "Race week":
+        return _back("recovery", "Not changed: race week is never trimmed.")
+    if kind not in ("trim", "easy") or weeks[0]["recovery"]["offer"] != kind:
+        return _back("recovery", "Not changed: that isn't on offer right now.")
+    # decided now: from today, or from tomorrow when today's run has already synced
+    start = t + timedelta(days=1) if t.isoformat() in db.actual_by_date() else t
+    db.add_trim(t.isoformat(), kind, start.isoformat())
+    return _back("recovery")
+
+
 RESULT_KM = {"5": 5.0, "10": 10.0, "21.1": 21.0975}
 
 
@@ -485,24 +518,27 @@ def result_delete(day: str = Form("", alias="date")):
 
 @app.post("/move")
 def move(day: str = Form("", alias="date"), session: str = Form(""), confirm: str = Form(""),
-         orig: str = Form("")):
+         orig: str = Form(""), by: str = Form("1")):
+    """Move a session to tomorrow (`by` 1) or to the day before (`by` -1), or skip it after a clash warning."""
     d = _day(day)
     if d is None or session not in view.SESSIONS:
         return _back("week", "Not moved: that isn't a session.")
-    if confirm not in ("", "skip", "move"):
+    if confirm not in ("", "skip", "move") or by not in ("1", "-1"):
         return _back("week", "Not moved: that isn't a choice.")
+    step = int(by)
     if d < today():
         return _back("week", "Not moved: that day has passed.")
     s, weeks = build_view()
     item = view.session_at(weeks, d, session, _day(orig))
     if item is None:
         return _back("week", "Not moved: there's no such session that day.")
-    if not item["movable"]:
-        return _back("week", "Not moved: it's done already, or tomorrow is race day or past the plan.")
-    if not confirm and moves.clash(weeks, session, d) is not None:
-        q = urlencode({"confirm": session, "on": d.isoformat(), "orig": item["orig_date"].isoformat()})
+    if not item["movable" if step == 1 else "movable_back"]:
+        return _back("week", "Not moved: it's done already, or tomorrow is race day or past the plan." if step == 1
+                     else "Not moved: it's done already, or the day before has passed or is before the plan.")
+    if not confirm and moves.clash(weeks, session, d, step) is not None:
+        q = urlencode({"confirm": session, "on": d.isoformat(), "orig": item["orig_date"].isoformat(), "by": by})
         return RedirectResponse(f"/?{q}#move", status_code=303)
-    new = None if confirm == "skip" else (d + timedelta(days=1)).isoformat()
+    new = None if confirm == "skip" else (d + timedelta(days=step)).isoformat()
     db.save_move(item["orig_date"].isoformat(), session, new)
     return _back("week")
 

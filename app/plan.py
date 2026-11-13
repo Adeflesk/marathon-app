@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from .config import next_monday, race_date
 
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+EASY_NOTE = "Easy. If the ankle complains, stop and walk home."
 
 
 def _half(x: float) -> float:
@@ -158,7 +159,7 @@ def generate(s: dict, today: date) -> list[dict]:
                 wk = _w(day, sess["type"], km_by_day[d], sess["pace"], sess["note"])
                 wk["steps"], wk["hard"] = sess["steps"], sess["hard"]
             else:
-                wk = _w(day, "easy", km_by_day[d], "easy", "Easy. If the ankle complains, stop and walk home.")
+                wk = _w(day, "easy", km_by_day[d], "easy", EASY_NOTE)
             workouts.append(wk)
         lday = monday + timedelta(days=DAYS.index(long_day))
         if is_race_week:

@@ -3,9 +3,9 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main, smashrun
+from app import main
 
-ISSUED = "2026-10-16"  # runs out about 15 Dec
+EXPIRES = "2026-12-15"
 
 
 @pytest.fixture
@@ -18,21 +18,12 @@ def on(monkeypatch, day):
     monkeypatch.setattr(main, "today", lambda: day)
 
 
-def env(monkeypatch, token="abc", issued=ISSUED):
-    monkeypatch.setenv("SMASHRUN_TOKEN", token)
-    if issued is None:
-        monkeypatch.delenv("SMASHRUN_TOKEN_ISSUED", raising=False)
+def env(monkeypatch, key="abc", expires=EXPIRES):
+    monkeypatch.setenv("GARMIN_API_KEY", key)
+    if expires is None:
+        monkeypatch.delenv("GARMIN_API_KEY_EXPIRES", raising=False)
     else:
-        monkeypatch.setenv("SMASHRUN_TOKEN_ISSUED", issued)
-
-
-def test_token_expiry_is_60_days_after_issue(monkeypatch):
-    env(monkeypatch)
-    assert smashrun.token_expiry() == date(2026, 12, 15)
-    env(monkeypatch, issued=None)
-    assert smashrun.token_expiry() is None
-    env(monkeypatch, issued="not a date")
-    assert smashrun.token_expiry() is None
+        monkeypatch.setenv("GARMIN_API_KEY_EXPIRES", expires)
 
 
 def test_warning_in_the_last_week(client, monkeypatch):
@@ -42,7 +33,15 @@ def test_warning_in_the_last_week(client, monkeypatch):
     on(monkeypatch, date(2026, 12, 10))  # 5 days left
     page = client.get("/")
     assert page.context["token_warning"] == {"expires": date(2026, 12, 15), "days": 5}
-    assert "Smashrun token runs out" in page.text and "SMASHRUN_TOKEN_ISSUED" in page.text
+    assert "Your Garmin key runs out" in page.text and "GARMIN_API_KEY_EXPIRES" in page.text
+    assert "connect.garmin.com/app/settings/personalApiToken" in page.text
+
+
+def test_no_warning_30_days_out(client, monkeypatch):
+    env(monkeypatch)
+    on(monkeypatch, date(2026, 11, 15))
+    page = client.get("/")
+    assert page.context["token_warning"] is None and "Your Garmin key" not in page.text
 
 
 def test_warning_after_expiry(client, monkeypatch):
@@ -50,12 +49,12 @@ def test_warning_after_expiry(client, monkeypatch):
     on(monkeypatch, date(2026, 12, 20))
     page = client.get("/")
     assert page.context["token_warning"]["days"] == -5
-    assert "Smashrun token ran out" in page.text
+    assert "Your Garmin key ran out" in page.text
 
 
-def test_no_warning_without_token_or_date(client, monkeypatch):
+def test_no_warning_without_key_or_date(client, monkeypatch):
     on(monkeypatch, date(2026, 12, 14))
-    env(monkeypatch, issued=None)
+    env(monkeypatch, expires=None)
     assert client.get("/").context["token_warning"] is None
-    env(monkeypatch, token="")
+    env(monkeypatch, key="")
     assert client.get("/").context["token_warning"] is None
