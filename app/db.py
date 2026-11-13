@@ -177,7 +177,7 @@ def checkins() -> dict[int, dict]:
 
 
 def run_details(ids: list[int]) -> dict[int, dict]:
-    """Stored Smashrun km splits and laps by activity id: {id: {"splits": [...], "laps": [...]}}."""
+    """Stored km splits and laps by activity id: {id: {"splits": [...], "laps": [...]}}."""
     if not ids:
         return {}
     with conn() as c:

@@ -1,7 +1,7 @@
 # Marathon plan app
 
 FastAPI + server-rendered pages + SQLite. Plans a build to the Barcelona Marathon (Sun 14 Mar 2027),
-syncs runs from Smashrun and compares them with the plan.
+syncs runs and recovery data from Garmin and compares them with the plan.
 
 ## Run it in VS Code
 
@@ -11,7 +11,7 @@ syncs runs from Smashrun and compares them with the plan.
    python -m venv .venv
    source .venv/bin/activate        # Windows: .venv\Scripts\activate
    pip install -r requirements.txt
-   cp .env.example .env             # then paste your Smashrun token into .env
+   cp .env.example .env             # then paste your Garmin key into .env
    uvicorn app.main:app --reload
    ```
    Or press F5 (the launch config is in `.vscode/launch.json`).
@@ -22,17 +22,36 @@ syncs runs from Smashrun and compares them with the plan.
 In Chrome on Android, open the app, then the ⋮ menu → **Add to home screen** (or **Install app**). It opens
 full screen with its own icon. If you had a plain shortcut before, remove it and add the app this way.
 
-## Smashrun token
+## Garmin key
 
-Open https://api.smashrun.com/v1/explorer, type `client` in the box at the top, click Connect and copy
-the token. Put it in `.env` as `SMASHRUN_TOKEN=...` (on Fly: `fly secrets set SMASHRUN_TOKEN=...`).
-It lasts about 60 days. Also set `SMASHRUN_TOKEN_ISSUED` to the day you generated it (`YYYY-MM-DD`), and
-This week warns you in the last 7 days before it runs out. When sync says the token was rejected, get a new
-one the same way and update both.
+Open https://connect.garmin.com/app/settings/personalApiToken, create a key and choose **1 year**. It is
+shown once, so copy it straight away. Put it in `.env` as `GARMIN_API_KEY=...` and set
+`GARMIN_API_KEY_EXPIRES` to the day it runs out (`YYYY-MM-DD`). On Fly:
+`fly secrets set GARMIN_API_KEY=... GARMIN_API_KEY_EXPIRES=YYYY-MM-DD`. This week warns you in the last 7
+days before it runs out. When sync says the key was rejected, make a new one the same way and update both.
+
+Runs, their km splits and laps, and your nightly HRV, resting heart rate and sleep all come from Garmin
+Connect. Runs you had synced from Smashrun before stay; a Garmin run replaces the matching old one.
+
+## Recovery
+
+The Recovery panel on This week and the charts on Progress read your HRV against your normal range (the band
+Garmin shows, for your 7-day average). The app only suggests; it never changes the plan by itself, and race
+week is never trimmed.
+
+- **Suspicion:** three nights in a row with HRV below your range, or a 7-day average below it. Nothing
+  changes yet. Resting heart rate and short or poor sleep are shown as extra weight, but never start it.
+- **The next run decides.** If that run shows a higher heart rate at easy pace or more drift than your
+  recent runs, the suspicion turns into advice; if it looks normal, the note stays a note.
+- **Take the trim:** the rest of that week at 90%, one rep off the next session, and strength held at its
+  current loads. You choose; nothing happens until you press it.
+- **Make the next run easy:** if HRV is still low three nights after the advice (or two more runs in), the
+  warning turns firm and this second button appears: your next run becomes an easy run at 80% of its km.
+- It clears when HRV is back in range two nights running and the 7-day average is no longer low.
 
 ## After a run
 
-Open This week or Progress once the run is in Smashrun: when a run planned for yesterday or today hasn't
+Open This week or Progress once the run is in Garmin Connect: when a run planned for yesterday or today hasn't
 synced yet, the app syncs first (at most every 15 minutes). If the run still isn't there, a line at the top
 says so with a **Sync now** button; the button at the bottom of the week works too. Each new run's km splits and laps come with it, and This week
 shows a review of your last run: easy runs quicker than easy get flagged, long runs show whether the
@@ -209,7 +228,7 @@ The shape follows what coaches and the research agree on. The full write-up is i
 - **Missed running:** a week can't be more than 15% above the best of your last four weeks actually run. If a
   week fell under 60% of its target (ill, travelling), the next one is held at 90% of that best week, then
   climbs back to the plan over two or three weeks. Never below 25 km, never on race week. It only counts
-  weeks a Smashrun sync has covered (a sync on or after the Sunday), so a sync gap can't shrink the plan. The
+  weeks a sync has covered (a sync on or after the Sunday), so a sync gap can't shrink the plan. The
   week says when it's been held; strength isn't trimmed by it. Following the plan, it never kicks in.
 
 This is a draft shape, not coaching. Stop if the ankle hurts, and see a physio if it keeps happening.

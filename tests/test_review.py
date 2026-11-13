@@ -5,7 +5,7 @@ from app.plan import generate
 
 TODAY = date(2026, 10, 16)
 
-# km splits as Smashrun returns them (cumulative distance and seconds), from the 16 Oct run
+# km splits as stored (cumulative distance and seconds), from the 16 Oct run
 SPLITS = [{"distance": 1.0, "seconds": 426, "heartRate": 126}, {"distance": 2.0, "seconds": 819, "heartRate": 137},
           {"distance": 3.0, "seconds": 1184, "heartRate": 146}, {"distance": 4.0, "seconds": 1562, "heartRate": 150},
           {"distance": 5.0, "seconds": 1972, "heartRate": 152}, {"distance": 5.9259, "seconds": 2372, "heartRate": 153}]
@@ -69,7 +69,7 @@ def test_mp_finish_checked_from_last_splits(settings):
     assert "5:41" in r["headline"] and r["verdict"] == "good"
 
 
-# The 28 Oct strides run as Smashrun returned its laps: 2 km warm-up, 6 strides with 60 s jogs, cool-down
+# The 28 Oct strides run as its laps were stored: 2 km warm-up, 6 strides with 60 s jogs, cool-down
 STRIDE_LAPS = [(  "warmup", 419, 1.00301), ("warmup", 818, 2.00325),
                ("work", 837, 2.06132), ("general", 897, 2.21875), ("work", 917, 2.29273), ("general", 977, 2.44898),
                ("work", 997, 2.52071), ("general", 1057, 2.67997), ("work", 1077, 2.75177), ("general", 1137, 2.90535),

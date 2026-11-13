@@ -1,6 +1,6 @@
 """Garmin activity FIT file -> the km splits and laps that review.py reads.
 
-Pure: ZIP bytes in, dict out. Both lists are cumulative, like Smashrun's: splits carry
+Pure: ZIP bytes in, dict out. Both lists are cumulative, like the stored rows: splits carry
 `distance` (km), `seconds` and `heartRate`; laps carry `endDistance` (km), `endDuration`
 (s) and `lapType` ("work" for an active rep when the FIT holds a workout with 2+ active steps,
 otherwise "general" for every lap).
