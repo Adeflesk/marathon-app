@@ -9,7 +9,7 @@ os.environ.pop("APP_PASSWORD", None)
 
 import pytest  # noqa: E402
 
-from app import config, smashrun  # noqa: E402
+from app import config, garmin_api, smashrun  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -26,6 +26,17 @@ def no_smashrun(monkeypatch):
     def offline(*args, **kwargs):
         raise RuntimeError("no network in tests")
     monkeypatch.setattr(smashrun.httpx, "Client", offline)
+
+
+@pytest.fixture(autouse=True)
+def no_garmin(monkeypatch):
+    """No test reaches the real Garmin: no key from .env, and any client fails (tests that sync fake it)."""
+    monkeypatch.delenv("GARMIN_API_KEY", raising=False)
+    monkeypatch.delenv("GARMIN_API_KEY_EXPIRES", raising=False)
+
+    def offline(*args, **kwargs):
+        raise RuntimeError("no network in tests")
+    monkeypatch.setattr(garmin_api.httpx, "Client", offline)
 
 
 @pytest.fixture
