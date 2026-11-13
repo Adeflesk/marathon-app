@@ -1,10 +1,14 @@
+import io
+import zipfile
 from datetime import date
+
+import pytest
 
 from app import fitfile, review
 from app.plan import generate
 from app.sessions import flatten
 
-from .fitdata import make_zip
+from .fitdata import make_fit, make_zip
 
 
 def steady(km, pace=300, hr=lambda m: 140 if m < 1000 else 150):
@@ -38,6 +42,39 @@ def test_workout_laps_typed():
     assert [x["lapType"] for x in out] == ["warmup", "work", "rest", "work", "cooldown"]
     assert [round(x["endDistance"], 1) for x in out] == [1.0, 1.8, 2.0, 2.8, 3.8]
     assert [round(x["endDuration"]) for x in out] == [300, 500, 590, 785, 1115]
+
+
+def test_repeat_block_counts_as_reps():
+    laps = [(1000, 300, "warmup"), (500, 150, "active"), (200, 90, "rest"), (500, 150, "active")]
+    steps = ["warmup", "active", "rest", ("repeat", 1, 2)]
+    out = fitfile.details(make_zip(steady(3), laps, steps))["laps"]
+    assert [x["lapType"] for x in out] == ["warmup", "work", "rest", "work"]
+
+
+def test_single_step_workout_laps_are_not_reps():
+    laps = [(1000, 300, "active")] * 5
+    out = fitfile.details(make_zip(steady(5), laps, ["warmup", "active"]))["laps"]
+    assert [x["lapType"] for x in out] == ["general"] * 5
+
+
+def test_invalid_utf8_in_a_side_message_is_skipped():
+    data = make_fit(steady(2.5), [(1000, 300, "warmup"), (800, 200, "active")], True, "abcdef")
+    bad = data.replace(b"abcdef", b"ab\xa0\xa0ef")
+    assert bad != data
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("1.fit", bad)
+    d = fitfile.details(buf.getvalue())
+    assert [round(x["seconds"]) for x in d["splits"]] == [300, 600, 750]
+    assert [x["lapType"] for x in d["laps"]] == ["warmup", "work"]
+
+
+def test_zip_without_fit_is_a_value_error():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("readme.txt", "x")
+    with pytest.raises(ValueError):
+        fitfile.details(buf.getvalue())
 
 
 def test_free_run_laps_are_not_reps():
