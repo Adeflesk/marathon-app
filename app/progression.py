@@ -247,7 +247,8 @@ def _override(ex, eq, ctx, last, last_w, last_rung, res):
     if phase.startswith("Taper"):
         why.append("taper")
     if factor < 1.0:
-        why.append("last week's check-in")
+        recovery = ctx.get("recovery") and ctx.get("checkin_factor", factor) >= 1.0
+        why.append("the recovery trim" if recovery else "last week's check-in")
     if phase == "Peak" and ex.get("role") == "main":
         why.append("Peak holds the main lifts")
     if ctx.get("ankle_flag") and ex.get("ankle"):

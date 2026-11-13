@@ -47,7 +47,7 @@ def garmin(monkeypatch):
             i = int(z.namelist()[0].split("_")[0])
         if i in g.bad:
             raise ValueError("corrupt")
-        return {"splits": [{"km": 1, "seconds": 300 + i % 7}], "laps": []}
+        return {"splits": [{"distance": 1.0, "seconds": 300 + i % 7, "heartRate": None}], "laps": []}  # as fitfile.details
 
     monkeypatch.setenv("GARMIN_API_KEY", "k")
     monkeypatch.setattr(garmin_sync.fitfile, "details", fake_details)

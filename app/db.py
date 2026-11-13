@@ -137,6 +137,12 @@ def init() -> None:
                 created TEXT,
                 PRIMARY KEY (date, session)
             );
+            CREATE TABLE IF NOT EXISTS recovery_trims (
+                date TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                created TEXT,
+                PRIMARY KEY (date, kind)
+            );
             """
         )
 
@@ -301,3 +307,16 @@ def toggle_fuel(day: str) -> None:
 def fuel_days() -> set[str]:
     with conn() as c:
         return {r["date"] for r in c.execute("SELECT date FROM fuel_logs")}
+
+
+def add_trim(day: str, kind: str) -> None:
+    """The user took the recovery advice on `day`: kind "trim" (rest of the week at 0.9) or "easy" (next run easy)."""
+    with conn() as c:
+        c.execute("INSERT OR IGNORE INTO recovery_trims (date, kind, created) VALUES (?,?,?)",
+                  (day, kind, datetime.now().isoformat(timespec="seconds")))
+
+
+def trims() -> list[dict]:
+    """Recovery choices taken, oldest first: [{"date", "kind"}]."""
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT date, kind FROM recovery_trims ORDER BY date, kind")]
