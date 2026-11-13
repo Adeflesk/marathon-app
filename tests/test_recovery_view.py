@@ -25,8 +25,9 @@ def weeks(t=TUE_W8, **over):
     return view.build_view(facts(**over), t)[1]
 
 
-def trim(day: date, kind="trim"):
-    return {"date": day.isoformat(), "kind": kind}
+def trim(day: date, kind="trim", start: date | None = None):
+    """A stored choice: pressed on `day`, applying from `start` (that day unless a run was already synced on it)."""
+    return {"date": day.isoformat(), "kind": kind, "start": (start or day).isoformat()}
 
 
 def reps(wo: dict) -> int:
@@ -106,16 +107,63 @@ def test_trimmed_session_is_the_untrimmed_one_minus_one_rep(tired):
     assert dropped >= 8
 
 
+def run(i: int, km: float) -> dict:
+    return {"km": km, "seconds": int(km * 360), "hr": [], "main": {"id": i, "km": km, "seconds": int(km * 360)}}
+
+
 def test_a_run_already_done_today_is_left_alone():
-    wed, sat = date(2026, 12, 9), date(2026, 12, 12)
-    done = {wed.isoformat(): {"km": 7.5, "seconds": 2700, "hr": [], "main": {"id": 9, "km": 7.5, "seconds": 2700}}}
+    """Pressed after today's run synced, the choice starts tomorrow (POST /recovery stores that start)."""
+    wed, thu, sat = date(2026, 12, 9), date(2026, 12, 10), date(2026, 12, 12)
+    done = {wed.isoformat(): run(9, 7.5)}
     plain = by_day(weeks(wed, actual=done)[7])
-    easy = by_day(weeks(wed, actual=done, trims=[trim(wed, "easy")])[7])
+    easy = by_day(weeks(wed, actual=done, trims=[trim(wed, "easy", thu)])[7])
     assert easy[wed]["type"] == "threshold" and easy[wed]["steps"] == plain[wed]["steps"]
     assert (easy[sat]["type"], easy[sat]["km"]) == ("easy", _half(plain[sat]["km"] * 0.8))
-    trimmed = by_day(weeks(wed, actual=done, trims=[trim(wed)])[7])
+    trimmed = by_day(weeks(wed, actual=done, trims=[trim(wed, start=thu)])[7])
     assert trimmed[wed]["steps"] == plain[wed]["steps"] and trimmed[wed]["km"] == plain[wed]["km"]
     assert trimmed[sat]["km"] == _half(plain[sat]["km"] * 0.9)  # the rest of the week is still trimmed
+
+
+def plan_of(ws: list[dict], first: int = 0) -> list:
+    return [[(wo["date"], wo["type"], wo["km"], wo.get("steps")) for wo in w["workouts"]] for w in ws[first:]]
+
+
+def test_easy_target_stays_fixed_once_it_syncs():
+    """The easy run is chosen when the button is pressed; syncing it never moves "easy" on to the next run."""
+    wed, sat, sun = date(2026, 12, 9), date(2026, 12, 12), date(2026, 12, 13)
+    stored = [trim(TUE_W8, "easy")]
+    before = weeks(TUE_W8, trims=stored)
+    for t, act in [(date(2026, 12, 10), {wed.isoformat(): run(1, 7.0)}),
+                   (sun, {wed.isoformat(): run(1, 7.0), sat.isoformat(): run(2, 6.0)}),
+                   (date(2026, 12, 14), {"2026-12-07": run(0, 6.0), wed.isoformat(): run(1, 7.0),
+                                         sat.isoformat(): run(2, 6.0), sun.isoformat(): run(3, 15.0)})]:
+        after = weeks(t, actual=act, trims=stored)
+        got = by_day(after[7])
+        assert (got[wed]["type"], got[wed]["km"]) == ("easy", before[7]["workouts"][1]["km"])
+        assert got[wed]["actual_km"] == 7.0
+        assert plan_of(after) == plan_of(before), t  # nothing else in that week or any later week changes
+
+
+def test_trimmed_runs_stay_trimmed_once_they_sync():
+    stored = [trim(TUE_W8)]
+    before = weeks(TUE_W8, trims=stored)
+    act = {"2026-12-09": run(1, 6.5), "2026-12-12": run(2, 5.0)}
+    after = weeks(date(2026, 12, 13), actual=act, trims=stored)
+    assert plan_of(after) == plan_of(before)
+    assert plan_of(after, 8) == plan_of(weeks(date(2026, 12, 13), actual=act), 8)
+
+
+def test_easy_on_the_trims_session_takes_its_rep_off_with_it():
+    """When "easy" replaces the trim's quality session, the rep off goes with it: the rest of the week is just
+    the 0.9 trim, and the next week is as planned."""
+    stored = [trim(TUE_W8), trim(TUE_W8, "easy")]
+    ws = weeks(trims=stored)
+    only_trim = weeks(trims=[trim(TUE_W8)])
+    w = by_day(ws[7])
+    assert w[date(2026, 12, 9)]["type"] == "easy"
+    assert [(wo["type"], wo["km"]) for wo in ws[7]["workouts"][2:]] == \
+        [(wo["type"], wo["km"]) for wo in only_trim[7]["workouts"][2:]]
+    assert plan_of(ws, 8) == plan_of(weeks(), 8)
 
 
 def test_trim_ends_sunday():
@@ -237,12 +285,28 @@ def test_post_recovery_stores_when_offered(client, monkeypatch):
     offering(monkeypatch, "trim")
     r = client.post("/recovery", data={"kind": "trim"}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/#recovery"
-    assert db.trims() == [{"date": TUE_W8.isoformat(), "kind": "trim"}]
+    assert db.trims() == [{"date": TUE_W8.isoformat(), "kind": "trim", "start": TUE_W8.isoformat()}]
     _, ws = main.build_view()
     assert ws[7]["recovery_trim"] == TUE_W8
     offering(monkeypatch, "easy")
     client.post("/recovery", data={"kind": "easy"}, follow_redirects=False)
     assert sorted(t["kind"] for t in db.trims()) == ["easy", "trim"]
+
+
+def test_post_recovery_after_todays_run_starts_tomorrow(client, monkeypatch):
+    offering(monkeypatch, "trim")
+    with db.conn() as c:
+        c.execute("DELETE FROM activities")
+        c.execute("INSERT INTO activities(id, date, km, seconds) VALUES (77, ?, 6.0, 2160)", (TUE_W8.isoformat(),))
+    try:
+        client.post("/recovery", data={"kind": "trim"}, follow_redirects=False)
+        wed = TUE_W8 + timedelta(days=1)
+        assert db.trims() == [{"date": TUE_W8.isoformat(), "kind": "trim", "start": wed.isoformat()}]
+        _, ws = main.build_view()
+        assert ws[7]["recovery_trim"] == wed
+    finally:
+        with db.conn() as c:
+            c.execute("DELETE FROM activities")
 
 
 @pytest.mark.parametrize("offer,kind,day", [

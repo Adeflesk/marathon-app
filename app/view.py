@@ -39,7 +39,7 @@ class Facts:
     fuel_days: set[str]
     last_sync: str | None
     wellness: list[dict]  # daily HRV, resting HR, sleep, stress, weight; oldest first, values may be None
-    trims: list[dict]  # recovery choices taken: {"date": ISO, "kind": "trim" | "easy"}
+    trims: list[dict]  # recovery choices taken: {"date": ISO pressed, "kind": "trim" | "easy", "start": ISO}
     equipment: dict
 
 
@@ -138,31 +138,32 @@ def _run_day(wo: dict, moved: dict) -> date | None:
     return moved[key] if key in moved else wo["date"]
 
 
+def _week_of(weeks: list[dict], d: date) -> dict | None:
+    return next((w for w in weeks if w["start"] <= d < w["start"] + timedelta(days=7)), None)
+
+
 def trim_days(weeks: list[dict], trims: list[dict]) -> dict[int, date]:
-    """Week number -> the day a recovery trim was taken in it (the earliest, if two). Never a Race week."""
+    """Week number -> the day a recovery trim starts in it (the earliest, if two): the day it was taken, or the
+    next one when that day's run had already synced (decided when it was stored). Never a Race week."""
     out: dict[int, date] = {}
     for tr in trims:
-        d = date.fromisoformat(tr["date"])
-        w = next((w for w in weeks if w["start"] <= d < w["start"] + timedelta(days=7)), None)
+        d = date.fromisoformat(tr["start"])
+        w = _week_of(weeks, d)
         if tr["kind"] == "trim" and w and w["phase"] != "Race week":
             out[w["week"]] = min(out.get(w["week"], d), d)
     return out
 
 
-def _not_run(day: date | None, actual: dict) -> bool:
-    """A day the run is still to come on: not skipped, and nothing synced on it yet."""
-    return day is not None and day.isoformat() not in actual
-
-
-def easy_runs(weeks: list[dict], trims: list[dict], moved: dict, actual: dict) -> set[int]:
-    """The runs "make the next run easy" applies to (by id): for each, the first run on or after its day that
-    isn't skipped, done (synced) or the race and has km, unless that run is in Race week."""
+def easy_runs(weeks: list[dict], trims: list[dict], moved: dict) -> set[int]:
+    """The runs "make the next run easy" applies to (by id): for each, the first run on or after its start day
+    that isn't skipped or the race and has km, unless that run is in Race week. Fixed by the stored start, so
+    the same run stays easy after it syncs."""
     out = set()
     for tr in (tr for tr in trims if tr["kind"] == "easy"):
-        d = date.fromisoformat(tr["date"])
+        d = date.fromisoformat(tr["start"])
         cands = [(day, -wo["km"], w, wo) for w in weeks for wo in w["workouts"]
                  for day in [_run_day(wo, moved)]
-                 if wo["type"] != "race" and wo["km"] > 0 and _not_run(day, actual) and day >= d]
+                 if wo["type"] != "race" and wo["km"] > 0 and day is not None and day >= d]
         if cands:
             _, _, w, wo = min(cands, key=lambda c: c[:2])
             if w["phase"] != "Race week":
@@ -184,7 +185,7 @@ def scale_and_shift_runs(weeks: list[dict], s: dict, f: Facts, t: date, moved: d
     follows the check-in and the trim."""
     caps, synced = volume_guard(weeks, f.actual, f.checkins, t, s["base_weekly_km"], f.last_sync)
     trimmed = trim_days(weeks, f.trims)
-    easy = easy_runs(weeks, f.trims, moved, f.actual)
+    easy = easy_runs(weeks, f.trims, moved)
     for w in weeks:
         factor = feedback_factor(f.checkins.get(w["week"] - 1))
         w["factor"] = factor
@@ -198,16 +199,19 @@ def scale_and_shift_runs(weeks: list[dict], s: dict, f: Facts, t: date, moved: d
             w["guard"] = {**cap, "planned": w["target_km"]}
         w["recovery_trim"] = trim_from = trimmed.get(w["week"])
         rep_off = trim_from is not None  # the trim's rep is still to come off the next quality session
+        sunday = w["start"] + timedelta(days=6)
         for wo in w["workouts"]:
             day = _run_day(wo, moved)
-            # the trim reaches runs still to come from its day on; a day already run stays as it was planned
-            in_trim = trim_from is not None and _not_run(day, f.actual) and day >= trim_from
+            # the trim reaches the runs from its start day to Sunday, synced or not
+            in_trim = trim_from is not None and day is not None and trim_from <= day <= sunday
             quality = in_trim and rep_off and "steps" in wo and wo["type"] != "strides"
             # the trim's session keeps the check-in's (or guard's) scaling and just loses one rep, so its rep
             # length and cool-down match the session without the trim
             wo_factor = min(run_factor, RECOVERY_FACTOR) if in_trim and not quality else run_factor
             if id(wo) in easy:  # replaces the run, never below what a 0.8 check-in would do
                 _make_easy(wo, min(RECOVERY_EASY, wo_factor))
+                if quality:  # the trim's session is gone, so its rep off goes with it
+                    rep_off = False
             else:
                 if wo_factor != 1.0 and wo["type"] != "race":
                     if "steps" in wo:  # fewer reps, so the day, the note and the .fit all agree

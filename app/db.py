@@ -140,6 +140,7 @@ def init() -> None:
             CREATE TABLE IF NOT EXISTS recovery_trims (
                 date TEXT NOT NULL,
                 kind TEXT NOT NULL,
+                start TEXT NOT NULL,
                 created TEXT,
                 PRIMARY KEY (date, kind)
             );
@@ -309,14 +310,15 @@ def fuel_days() -> set[str]:
         return {r["date"] for r in c.execute("SELECT date FROM fuel_logs")}
 
 
-def add_trim(day: str, kind: str) -> None:
-    """The user took the recovery advice on `day`: kind "trim" (rest of the week at 0.9) or "easy" (next run easy)."""
+def add_trim(day: str, kind: str, start: str) -> None:
+    """The user took the recovery advice on `day`: kind "trim" (`start` to Sunday at 0.9) or "easy" (the next run
+    from `start` easy). `start` is fixed here, so a run syncing later never moves the choice on."""
     with conn() as c:
-        c.execute("INSERT OR IGNORE INTO recovery_trims (date, kind, created) VALUES (?,?,?)",
-                  (day, kind, datetime.now().isoformat(timespec="seconds")))
+        c.execute("INSERT OR IGNORE INTO recovery_trims (date, kind, start, created) VALUES (?,?,?,?)",
+                  (day, kind, start, datetime.now().isoformat(timespec="seconds")))
 
 
 def trims() -> list[dict]:
-    """Recovery choices taken, oldest first: [{"date", "kind"}]."""
+    """Recovery choices taken, oldest first: [{"date", "kind", "start"}]."""
     with conn() as c:
-        return [dict(r) for r in c.execute("SELECT date, kind FROM recovery_trims ORDER BY date, kind")]
+        return [dict(r) for r in c.execute("SELECT date, kind, start FROM recovery_trims ORDER BY date, kind")]

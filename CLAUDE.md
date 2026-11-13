@@ -99,7 +99,9 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
     a day with two runs shares its actual, the longer run gets the review; then `attach_strength()`, shifted
     before logs are looked up, with suggestions and snacks; then relocate strength) → `mark_done_and_movable()`.
   - Recovery: `Facts` also holds `wellness` and `trims`. `scale_and_shift_runs()` applies trims (the rest of the week at
-    0.9 and a rep off the next session, or the next run easy at 0.8; never a run already done, never race week),
+    0.9 and a rep off the next session, or the next run easy at 0.8; never race week) from the trim's stored `start`
+    (today, or tomorrow when today's run had synced when it was pressed), so the trimmed runs and the easy run stay
+    fixed once they sync,
     `recovery_state()` puts `recovery.state()` on each week, and strength follows a trim (loads held).
   - Also the questions pages ask of a built view: `missing_runs()`, `session_at()`, `move_warning()`.
   - Page data from a built view, pure too: `dashboard()` is everything This week shows (`next_run()`, `last_run()`,
@@ -157,7 +159,7 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
 - `app/db.py` — tables: `activities` (synced runs), `run_details` (JSON km splits and laps per run),
   `checkins` (keyed by week number), `strength_logs` (logged sets, weight, reps, rating, ankle pain),
   `snack_logs` (daily ankle snack ticks), `ankle_tests` (readiness test values), `ankle_checks` (morning ankle checks),
-  `moves` (a session's original date + `run`/`A`/`B` → new date, or NULL when skipped), `wellness` (daily HRV, resting HR, sleep, stress, weight), `recovery_trims` (recovery choices: date + `trim`/`easy`), `run_files` (original FIT per Garmin run), `run_source` (which activities came from Garmin), `results` (races and
+  `moves` (a session's original date + `run`/`A`/`B` → new date, or NULL when skipped), `wellness` (daily HRV, resting HR, sleep, stress, weight), `recovery_trims` (recovery choices: date pressed + `trim`/`easy` + `start`, the first day it applies), `run_files` (original FIT per Garmin run), `run_source` (which activities came from Garmin), `results` (races and
   time trials: date, km, seconds), `goals` (goal changes: date, goal_time or "settings"; the latest wins), `fuel_logs` (date of a long run fuelled as planned) and `meta` (key/value; `last_sync` is written by a successful sync,
   `last_sync_try` by each sync on open).
   Schema is `CREATE IF NOT EXISTS` on startup; there are no migrations. `DB_PATH` env var overrides `data/marathon.db`.

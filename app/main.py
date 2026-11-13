@@ -463,7 +463,8 @@ def fuel_tick(day: str = Form("", alias="date")):
 @app.post("/recovery")
 def recovery_take(kind: str = Form("")):
     """Take the recovery advice on offer: "trim" (the rest of this week at 0.9, a rep off the next session) or
-    "easy" (the next run easy). Stored only when the page offers exactly that button, and never in Race week."""
+    "easy" (the next run easy). Stored only when the page offers exactly that button, and never in Race week.
+    It starts today, or tomorrow when today's run is already in."""
     t = today()
     _, weeks = build_view()
     current = next((w for w in weeks if w["start"] <= t < w["start"] + timedelta(days=7)), None)
@@ -471,7 +472,9 @@ def recovery_take(kind: str = Form("")):
         return _back("recovery", "Not changed: race week is never trimmed.")
     if kind not in ("trim", "easy") or weeks[0]["recovery"]["offer"] != kind:
         return _back("recovery", "Not changed: that isn't on offer right now.")
-    db.add_trim(t.isoformat(), kind)
+    # decided now: from today, or from tomorrow when today's run has already synced
+    start = t + timedelta(days=1) if t.isoformat() in db.actual_by_date() else t
+    db.add_trim(t.isoformat(), kind, start.isoformat())
     return _back("recovery")
 
 
