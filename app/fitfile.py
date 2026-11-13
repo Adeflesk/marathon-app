@@ -13,12 +13,14 @@ from fit_tool.data_message import DataMessage
 from fit_tool.decoder import FitDecoder, register_developer_field
 from fit_tool.exceptions import FitRecordError
 from fit_tool.field import Field
+from fit_tool.wire.decoder import WireDecoder
 
 PAUSE_S = 10  # a gap between two records longer than this is a pause, not running
 MIN_TAIL_M = 10  # a final partial km shorter than this isn't worth a split
 ACTIVE = (0, 5)  # FIT intensity: active, interval
 REPEAT = 6  # FIT workout step duration type: repeat until steps complete
 MIN_REPS = 2  # laps are typed only for a workout with this many active steps; one is a plain run
+FILE_CRC = 2  # bytes after each segment's records
 # FIT intensity enum: 0 active, 1 rest, 2 warmup, 3 cooldown, 4 recovery, 5 interval, 6 other
 LAP_TYPES = {0: "work", 1: "rest", 2: "warmup", 3: "cooldown", 4: "rest", 5: "work"}
 
@@ -52,29 +54,33 @@ def _project(decoder, raw, registry):
             Field.read_strings_from_bytes = original
 
 
-def _messages(data: bytes) -> list:
-    """Every data message in a FIT file."""
-    decoder = FitDecoder(check_crc=False)
-    document = decoder.decode_document(data)
+def _messages(data: bytes):
+    """Every data message in a FIT file, one at a time: each raw record is read from the buffer and projected
+    as it comes, so only the message in hand is held, never the whole decoded document (a 10 km run's FIT
+    held at once took ~225 MB). Chained segments follow one another as in fit-tool's own decode."""
+    decoder = FitDecoder(check_crc=False)  # projection state: developer fields, component accumulators
     registry = decoder.developer_fields_by_data_index
-    out = []
-    for segment in document.segments:
-        for raw in segment.records:
+    wire = WireDecoder(check_crc=False)
+    offset = 0
+    while offset < len(data):
+        for raw in wire.iter_raw_records(data, offset=offset):
             record = _project(decoder, raw, registry)
             register_developer_field(record, registry)
             if isinstance(record.message, DataMessage):
-                out.append(record.message)
-    return out
+                yield record.message
+        offset = wire.crc_offset + FILE_CRC
+        if not WireDecoder._looks_like_header(data, offset):
+            break
 
 
-def _active_steps(messages: list) -> int:
-    """Active (run) steps in the FIT's workout, a repeat block counting its steps once per repeat."""
-    steps = [m for m in messages if m.name == "workout_step"]
-    active = [int(m.intensity) in ACTIVE if m.intensity is not None else False for m in steps]
+def _active_steps(steps: list[tuple]) -> int:
+    """Active (run) steps in the FIT's workout, a repeat block counting its steps once per repeat.
+    steps: (intensity, duration_type, duration_value, target_value) per workout_step message."""
+    active = [intensity in ACTIVE if intensity is not None else False for intensity, *_ in steps]
     total = 0
-    for i, m in enumerate(steps):
-        if m.duration_type == REPEAT:
-            first, times = m.duration_value or 0, m.target_value or 0
+    for i, (_, duration_type, duration_value, target_value) in enumerate(steps):
+        if duration_type == REPEAT:
+            first, times = duration_value or 0, target_value or 0
             total += sum(active[first:i]) * max(times - 1, 0)
         elif active[i]:
             total += 1
@@ -107,22 +113,32 @@ def _splits(records: list[tuple[float, float, int | None]]) -> list[dict]:
 
 
 def details(zip_bytes: bytes) -> dict:
+    """Keeps only (timestamp, distance, hr) per record, lap totals and workout-step info as they're decoded."""
+    records: list[tuple[float, float, int | None]] = []
+    laps_raw: list[tuple[float, float, int]] = []
+    steps: list[tuple] = []
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
         name = next((n for n in z.namelist() if n.lower().endswith(".fit")), None)
         if name is None:
             raise ValueError("no .fit file in the activity ZIP")
-        messages = _messages(z.read(name))
-
-    records = [(m.timestamp, m.distance, m.heart_rate) for m in messages
-               if m.name == "record" and m.timestamp is not None and m.distance is not None]
-    laps_raw = [m for m in messages if m.name == "lap"]
+        data = z.read(name)
+    for m in _messages(data):
+        if m.name == "record":
+            if m.timestamp is not None and m.distance is not None:
+                records.append((m.timestamp, m.distance, m.heart_rate))
+        elif m.name == "lap":
+            laps_raw.append((m.total_distance or 0.0, m.total_timer_time or 0.0,
+                             int(m.intensity if m.intensity is not None else 0)))
+        elif m.name == "workout_step":
+            steps.append((int(m.intensity) if m.intensity is not None else None, m.duration_type,
+                          m.duration_value, m.target_value))
     # Garmin attaches a one-step workout to plain runs, so only a real session types its laps
-    typed = _active_steps(messages) >= MIN_REPS
+    typed = _active_steps(steps) >= MIN_REPS
 
     laps, dist, dur = [], 0.0, 0.0
-    for m in laps_raw:
-        dist += m.total_distance or 0.0
-        dur += m.total_timer_time or 0.0
-        kind = LAP_TYPES.get(int(m.intensity if m.intensity is not None else 0), "general") if typed else "general"
+    for metres, timer, intensity in laps_raw:
+        dist += metres
+        dur += timer
+        kind = LAP_TYPES.get(intensity, "general") if typed else "general"
         laps.append({"endDistance": dist / 1000, "endDuration": dur, "lapType": kind})
     return {"splits": _splits(records), "laps": laps}

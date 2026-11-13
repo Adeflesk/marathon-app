@@ -108,3 +108,19 @@ def test_review_reads_it(settings):
     d = fitfile.details(make_zip(steady(12), laps, True))
     r = review.review(wk, {"km": 12, "seconds": 3600}, d, settings["paces"])
     assert len(r["reps"]) == len(reps) >= 2
+
+
+def test_decoding_streams_instead_of_holding_every_message():
+    """A real 10 km FIT once peaked at ~225 MB over baseline (every decoded message held at once) on a 256 MB VM.
+    The decode keeps only what the splits and laps need, so its memory doesn't grow with the run."""
+    import tracemalloc
+
+    z = make_zip(steady(4), [(4000, 1200, "active")], False)  # 1200 records
+    tracemalloc.start()
+    try:
+        d = fitfile.details(z)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert len(d["splits"]) == 4
+    assert peak < 8_000_000, peak
