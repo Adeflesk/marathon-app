@@ -51,7 +51,8 @@ def test_panel_shows_last_night(client):
     night(TUE)
     page = client.get("/").text
     assert 'id="recovery"' in page
-    assert "52 ms" in page and "45" in page and "60" in page  # HRV and its band
+    assert "52 ms" in page and "last night" in page  # last night
+    assert "7-day average" in page and "51 ms" in page and "normal 45–60" in page  # the band is for the average
     assert "48 bpm" in page  # resting HR
     assert "7:05" in page  # sleep, h:mm
     assert "sleep stress" in page and "72.4 kg" in page
@@ -146,3 +147,26 @@ def test_recovery_trend_is_last_eight_weeks_per_day():
     assert len(out) == 56 and out[-1]["date"] == TUE.isoformat() and out[0]["date"] == (TUE - timedelta(days=55)).isoformat()
     assert set(out[0]) == {"date", "hrv_night", "hrv_week_avg", "hrv_low", "hrv_high", "rhr", "sleep_s"}
     assert progress.recovery_trend([], TUE) == []
+
+
+def _blank_night(day, **keep):
+    base = dict(hrv_night=None, hrv_week_avg=None, hrv_low=None, hrv_high=None, rhr=None, sleep_s=None,
+                sleep_score=None, stress_avg=None, weight_kg=None)
+    night(day, **{**base, **keep})
+
+
+def test_all_none_latest_row_hides_panel_and_pages_render(client):
+    _blank_night(TUE)
+    for url in ("/", "/progress"):
+        assert client.get(url).status_code == 200
+    assert 'id="recovery"' not in client.get("/").text
+
+
+def test_weight_only_row_has_no_empty_paragraph(client):
+    _blank_night(TUE, weight_kg=72.4)
+    r = client.get("/")
+    assert r.status_code == 200 and client.get("/progress").status_code == 200
+    panel = r.text.split('id="recovery"')[1].split("</section>")[0]
+    assert "72.4 kg" in panel and "<p>\n  </p>" not in panel and "<p>\s*</p>" not in panel
+    import re
+    assert not re.search(r"<p>\s*</p>", panel)

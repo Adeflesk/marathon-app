@@ -105,11 +105,11 @@
 
 {% if recovery_trend %}
 {% set rt = recovery_trend %}
-{% set d0 = rt[0].date %}
+{% set d0 = trend_start %}
 {% macro xp(day, d0) %}{{ (20 + 300 * (day|dayx(d0)) / 55)|round(1) }}{% endmacro %}
 <section aria-labelledby="rec-h" style="margin-top:28px">
   <h2 id="rec-h">Recovery</h2>
-  <p class="mute">Overnight HRV against your normal range, resting heart rate and sleep, over the last 8 weeks.</p>
+  <p class="mute">Overnight HRV and its 7-day average against the normal range for that average, resting heart rate and sleep, over the last 8 weeks.</p>
   {% set hrv = rt|selectattr('hrv_night')|list %}
   {% if hrv|length >= 2 %}
   {% set vals = hrv|map(attribute='hrv_night')|list + (rt|selectattr('hrv_low')|map(attribute='hrv_low')|list) + (rt|selectattr('hrv_high')|map(attribute='hrv_high')|list) %}
@@ -117,7 +117,7 @@
   {% set band = rt|selectattr('hrv_low')|selectattr('hrv_high')|list %}
   {% set avg = rt|selectattr('hrv_week_avg')|list %}
   <h3 class="small" style="margin-top:12px">Overnight HRV (ms)</h3>
-  <svg class="chart" viewBox="0 0 340 100" role="img" aria-label="Overnight HRV: latest {{ hrv[-1].hrv_night|round|int }} ms{% if hrv[-1].hrv_low is not none and hrv[-1].hrv_high is not none %}, normal range {{ hrv[-1].hrv_low|round|int }} to {{ hrv[-1].hrv_high|round|int }}{% endif %}">
+  <svg class="chart" viewBox="0 0 340 100" role="img" aria-label="Overnight HRV: latest {{ hrv[-1].hrv_night|round|int }} ms{% if hrv[-1].hrv_low is not none and hrv[-1].hrv_high is not none %}, normal range for the 7-day average {{ hrv[-1].hrv_low|round|int }} to {{ hrv[-1].hrv_high|round|int }}{% endif %}">
     {% if band|length >= 2 %}
     {% set up = [] %}{% set down = [] %}
     {% for r in band %}{% set x = xp(r.date, d0) %}{% set _ = up.append(x ~ ',' ~ ((10 + 70 * (hi - r.hrv_high) / (hi - lo))|round(1))) %}{% set _ = down.insert(0, x ~ ',' ~ ((10 + 70 * (hi - r.hrv_low) / (hi - lo))|round(1))) %}{% endfor %}
@@ -128,7 +128,7 @@
     <text x="20" y="95">{{ rt[0].date[5:] }}</text>
     <text x="320" y="95" text-anchor="end">now: {{ hrv[-1].hrv_night|round|int }}</text>
   </svg>
-  <p class="mute small">Dots are single nights, the line is the 7-day average, the shaded strip is your normal range.</p>
+  <p class="mute small">Dots are single nights, the line is the 7-day average, the shaded strip is the normal range for the 7-day average.</p>
   {% else %}<p class="mute small">Not enough nights of HRV yet.</p>{% endif %}
 
   {% set rhr = rt|selectattr('rhr')|list %}

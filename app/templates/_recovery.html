@@ -1,7 +1,8 @@
 {# Recovery: the advice card (when there is one) above last night's numbers. Needs `recovery`, `today`. #}
 {% set rc = recovery %}
 {% set last = rc.last if rc else none %}
-{% if last %}
+{% set shown = last and (last.hrv_night is not none or last.hrv_week_avg is not none or last.rhr is not none or last.sleep_s is not none or last.stress_avg is not none or last.weight_kg is not none) %}
+{% if shown %}
 <section class="stack" id="recovery" aria-labelledby="recovery-h" style="margin-top:12px">
   {% if rc.phase in ("advice", "firm") %}
   <div class="notice stack" role="alert">
@@ -22,11 +23,14 @@
   <h2 id="recovery-h" style="font-size:1rem">Recovery{% if last.date != today.isoformat() %} <span class="mute small">(latest: {{ last.date }})</span>{% endif %}</h2>
   {% if rc.phase == "suspect" %}<p class="mute small">Keeping an eye on it: {{ rc.reasons|join('; ') }}. Nothing to do yet.</p>
   {% elif rc.phase == "note" %}<p class="mute small">{{ rc.reasons|join('; ') }}. Your {{ rc.run.date.strftime('%A') }} run looked normal, so no change for now.</p>{% endif %}
+  {% if last.hrv_night is not none or last.hrv_week_avg is not none or last.rhr is not none or last.sleep_s is not none %}
   <p>
-    {% if last.hrv_night is not none %}HRV <strong>{{ last.hrv_night|round|int }} ms</strong>{% if last.hrv_low is not none and last.hrv_high is not none %} <span class="mute">(your range {{ last.hrv_low|round|int }}–{{ last.hrv_high|round|int }})</span>{% endif %}{% endif %}
+    {% if last.hrv_night is not none %}HRV <strong>{{ last.hrv_night|round|int }} ms</strong> last night{% endif %}
+    {% if last.hrv_week_avg is not none %}{{ ' · ' if last.hrv_night is not none }}7-day average <strong>{{ last.hrv_week_avg|round|int }} ms</strong>{% if last.hrv_low is not none and last.hrv_high is not none %} <span class="mute">(normal {{ last.hrv_low|round|int }}–{{ last.hrv_high|round|int }})</span>{% endif %}{% endif %}
     {% if last.rhr is not none %} · resting HR <strong>{{ last.rhr }} bpm</strong>{% endif %}
     {% if last.sleep_s is not none %} · sleep <strong>{{ last.sleep_s // 3600 }}:{{ '%02d'|format(last.sleep_s % 3600 // 60) }}</strong>{% endif %}
   </p>
+  {% endif %}
   {% if last.stress_avg is not none or last.weight_kg is not none %}
   <p class="mute small">{% if last.stress_avg is not none %}sleep stress {{ last.stress_avg }}{% endif %}{% if last.stress_avg is not none and last.weight_kg is not none %} · {% endif %}{% if last.weight_kg is not none %}{{ last.weight_kg|round(1) }} kg{% endif %}</p>
   {% endif %}

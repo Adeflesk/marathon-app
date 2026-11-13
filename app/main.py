@@ -190,6 +190,7 @@ def progress_page(request: Request, msg: str = ""):
         "n_weeks": len(weeks), "why": progress.why_rows(weeks, t, ref_pace),
         "fitness": progress.fitness_trend(weeks, ref_pace), "ref_pace": ref_pace,
         "recovery_trend": progress.recovery_trend(db.wellness(), t),
+        "trend_start": (t - timedelta(days=progress.TREND_DAYS - 1)).isoformat(),
         "long_runs": progress.long_runs(weeks), "plan": progress.plan_bars(weeks),
         "ankle": progress.ankle_table(weeks, st["tests"]), "ankle_state": st,
         "summaries": progress.summaries(weeks, s, st, db.results(), t),
