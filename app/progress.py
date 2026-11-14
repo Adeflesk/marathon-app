@@ -34,6 +34,39 @@ def fitness_trend(weeks: list[dict], ref_pace: float) -> list[dict]:
     return out
 
 
+CADENCE_STEADY = 3  # steps/min: the last 4 weeks' median within this of the 4 before reads as steady
+
+
+def cadence_trend(weeks: list[dict], ref_pace: float) -> list[dict]:
+    """Per week to now: median cadence (steps/min) and step length (m) on the splits fitness_trend uses, so pace
+    doesn't move it. None for a week with too few splits carrying cadence."""
+    out = []
+    for w in _to_date(weeks):
+        cad, stride = [], []
+        for wo in w["workouts"]:
+            if wo["type"] not in ("easy", "long") or "steps" in wo or not wo.get("review"):
+                continue
+            for sp in wo["review"]["splits"][1:]:
+                if sp["km"] >= 0.9 and sp.get("cadence") and abs(sp["pace"] - ref_pace) <= PACE_BAND:
+                    cad.append(sp["cadence"])
+                    if sp.get("stride"):
+                        stride.append(sp["stride"])
+        ok = len(cad) >= MIN_SPLITS
+        out.append({"week": w["week"], "cadence": median(cad) if ok else None,
+                    "stride": median(stride) if ok and stride else None, "n": len(cad)})
+    return out
+
+
+def cadence_reading(trend: list[dict]) -> str | None:
+    """"steady", "rising" or "falling": the last 4 weeks' median cadence against the 4 before (2+ weeks in each)."""
+    last = [w["cadence"] for w in trend[-4:] if w["cadence"] is not None]
+    before = [w["cadence"] for w in trend[-8:-4] if w["cadence"] is not None]
+    if len(last) < 2 or len(before) < 2:
+        return None
+    diff = median(last) - median(before)
+    return "steady" if abs(diff) <= CADENCE_STEADY else ("rising" if diff > 0 else "falling")
+
+
 TREND_DAYS = 56
 TREND_KEYS = ("hrv_night", "hrv_week_avg", "hrv_low", "hrv_high", "rhr", "sleep_s")
 

@@ -212,6 +212,21 @@
     Hops: {{ 'not started' if st.hop_stage is none else 'stage ' ~ st.hop_stage }} · Balance: stage {{ st.balance_stage }} ·
     {% if st.flag_until %}Ankle flag up until {{ st.flag_until.strftime('%-d %b') }}{% else %}No ankle flag{% endif %}
   </p>
+  {% set cp = cadence|selectattr('cadence')|list %}
+  {% if cp|length >= 2 %}
+  <h3 style="margin-top:16px">Cadence</h3>
+  <p class="mute small">Steps a minute on easy runs at {{ ref_pace|pace }}/km, week by week. When it falls as runs get longer, the stride is getting longer, and that loads the ankle more.{% if cadence_reading %} Cadence at easy pace: {{ cadence_reading }} over the last 4 weeks.{% endif %}</p>
+  {% set lo = (cp|map(attribute='cadence')|min) - 3 %}{% set hi = (cp|map(attribute='cadence')|max) + 3 %}
+  {% set n = cadence|length %}
+  <svg class="chart" viewBox="0 0 340 100" role="img" aria-label="Cadence at easy pace: {% for x in cp %}week {{ x.week }} {{ x.cadence|round|int }}{{ ', ' if not loop.last }}{% endfor %}">
+    {% set coords = [] %}
+    {% for x in cp %}{% set _ = coords.append(((20 + 300 * (x.week - cadence[0].week) / ([n - 1, 1]|max))|round(1))|string ~ ',' ~ ((10 + 70 * (hi - x.cadence) / (hi - lo))|round(1))|string) %}{% endfor %}
+    <polyline class="c-line" points="{{ coords|join(' ') }}"/>
+    {% for c in coords %}{% set xy = c.split(',') %}<circle class="c-dot" cx="{{ xy[0] }}" cy="{{ xy[1] }}" r="3"/>{% endfor %}
+    <text x="20" y="95">week {{ cp[0].week }}: {{ cp[0].cadence|round|int }}</text>
+    <text x="320" y="95" text-anchor="end">now: {{ cp[-1].cadence|round|int }}</text>
+  </svg>
+  {% endif %}
 </section>
 
 <section class="summaries" aria-labelledby="sum-h" style="margin-top:24px">

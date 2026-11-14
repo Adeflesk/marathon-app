@@ -164,3 +164,25 @@ def test_plan_row_ignores_weeks_no_sync_has_covered():
     weeks[4]["actual_km"], weeks[4]["synced"] = 8.0, False  # Sunday's long run not synced yet
     r = rows(weeks)["plan"]
     assert r["ok"] and "100%" in r["text"] and "week 5 not synced yet" in r["text"]
+
+
+def cad_run(n, cadence, stride=1.0):
+    wo = run(n, splits=[(1, 405, 140)] * 4)
+    for sp in wo["review"]["splits"]:
+        sp["cadence"], sp["stride"] = cadence, stride
+    return wo
+
+
+def test_cadence_trend_at_easy_pace():
+    weeks = [wk(1, [cad_run(1, 176)]), wk(2, [run(2, splits=[(1, 405, 140)] * 4)])]  # week 2: no cadence
+    trend = progress.cadence_trend(weeks, 405)
+    assert trend[0] == {"week": 1, "cadence": 176, "stride": 1.0, "n": 3}
+    assert trend[1]["cadence"] is None
+
+
+def test_cadence_reading():
+    weeks = [wk(i, [cad_run(i, 176 if i <= 4 else 170)]) for i in range(1, 9)]
+    assert progress.cadence_reading(progress.cadence_trend(weeks, 405)) == "falling"
+    weeks = [wk(i, [cad_run(i, 176 if i <= 4 else 178)]) for i in range(1, 9)]
+    assert progress.cadence_reading(progress.cadence_trend(weeks, 405)) == "steady"
+    assert progress.cadence_reading(progress.cadence_trend(weeks[:3], 405)) is None

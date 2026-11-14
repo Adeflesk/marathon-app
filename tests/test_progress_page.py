@@ -65,3 +65,12 @@ def test_progress_renders_every_day(client, monkeypatch):
         on(monkeypatch, day)
         assert client.get("/progress").status_code == 200, day
         day += timedelta(days=3)
+
+
+def test_cadence_chart(client, monkeypatch):
+    on(monkeypatch, date(2026, 11, 14))
+    assert "Cadence at easy pace" not in client.get("/progress").text
+    trend = [{"week": i, "cadence": 170 + i, "stride": 1.0, "n": 5} for i in range(1, 9)]
+    monkeypatch.setattr(main.progress, "cadence_trend", lambda weeks, ref: trend)
+    page = client.get("/progress").text
+    assert 'aria-label="Cadence at easy pace' in page and "rising over the last 4 weeks" in page
