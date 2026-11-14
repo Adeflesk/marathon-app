@@ -10,6 +10,7 @@ from .pace_engine import fmt_pace
 from .sessions import flatten, pace_s
 
 ON_PACE_S = 10  # a rep within 10 s/km of target counts as on pace (the watch's hard band)
+MIN_SPLIT_KM = 0.05  # a last split shorter than 50 m is noise (the watch stopping), not a split
 
 
 def splits(raw: list[dict]) -> list[dict]:
@@ -17,7 +18,7 @@ def splits(raw: list[dict]) -> list[dict]:
     out, dist, secs = [], 0.0, 0.0
     for s in raw:
         d, t = s["distance"] - dist, s["seconds"] - secs
-        if d > 0:
+        if d >= MIN_SPLIT_KM:
             out.append({"km": d, "pace": t / d, "hr": s.get("heartRate")})
         dist, secs = s["distance"], s["seconds"]
     return out
@@ -142,6 +143,15 @@ def review(workout: dict, run: dict, detail: dict, paces: dict) -> dict:
         return out
 
     if avg is None:
+        return out
+    if workout["type"] == "long":
+        if avg < paces["marathon"] + 20:
+            out["headline"] = f"Long run at {fmt_pace(avg)}/km is quicker than long-run pace. Keep it steady."
+            out["verdict"] = "warn"
+        else:
+            out["headline"] = (f"Long run at {fmt_pace(avg)}/km (planned {fmt_pace(paces['long'])})"
+                               + (f", {words}." if words else "."))
+            out["verdict"] = "good" if (d is None or d < 10) else "warn"
         return out
     if avg < paces["marathon"] + 20:
         out["headline"] = f"{fmt_pace(avg)}/km is quicker than easy. Keep easy days easy."

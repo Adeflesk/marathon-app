@@ -106,3 +106,25 @@ def test_strides_without_work_laps_say_so(settings):
     r = stride_review(settings, [("general", 2313, 5.85929)])
     assert r["reps"] == [] and r["drift"] is None and "watch workout" in r["note"]
     assert r["verdict"] != "bad"
+
+
+def steady(n, pace, hr=145):
+    return [{"distance": i, "seconds": pace * i, "heartRate": hr} for i in range(1, n + 1)]
+
+
+def test_long_run_without_mp_names_planned_long_pace(settings):
+    lr = {"type": "long", "km": 12}
+    r = review.review(lr, {"km": 12, "seconds": 12 * 373}, {"splits": steady(12, 373), "laps": []}, settings["paces"])
+    assert r["headline"].startswith("Long run at 6:13/km (planned 6:30)")
+    assert r["verdict"] == "good"
+
+
+def test_long_run_quicker_than_mp_plus_20_warns(settings):
+    lr = {"type": "long", "km": 12}
+    r = review.review(lr, {"km": 12, "seconds": 12 * 355}, {"splits": steady(12, 355), "laps": []}, settings["paces"])
+    assert r["verdict"] == "warn" and "quicker than long-run pace" in r["headline"]
+
+
+def test_tiny_last_split_dropped():
+    raw = steady(12, 373) + [{"distance": 12.01, "seconds": 12 * 373 + 6, "heartRate": 143}]
+    assert len(review.splits(raw)) == 12
