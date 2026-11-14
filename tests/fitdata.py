@@ -21,7 +21,7 @@ DEFAULT_STEPS = ["warmup", "active", "rest", "active", "cooldown"]
 
 
 def make_fit(records, laps, workout, name="Session"):
-    """records: (seconds, metres, hr); laps: (metres, timer_seconds, intensity).
+    """records: (seconds, metres, hr) or (seconds, metres, hr, cadence spm, step mm, stance ms); laps: (metres, timer_seconds, intensity).
 
     workout: False for a free run, True for DEFAULT_STEPS, or a list of steps, each an
     intensity name, (intensity, step_name), or ("repeat", first_step_index, times)."""
@@ -50,11 +50,18 @@ def make_fit(records, laps, workout, name="Session"):
             else:
                 step.intensity = INTENSITY[spec]
             builder.add(step)
-    for secs, metres, hr in records:
+    for rec in records:
+        secs, metres, hr = rec[:3]
         r = RecordMessage()
         r.timestamp = T0 + round(secs * 1000)
         r.distance = metres
         r.heart_rate = hr
+        if len(rec) > 3:  # (…, cadence steps/min, step length mm, stance ms) as a watch writes them
+            spm, step_mm, stance_ms = rec[3:]
+            r.cadence = int(spm // 2)
+            r.fractional_cadence = (spm / 2) % 1
+            r.step_length = step_mm
+            r.stance_time = stance_ms
         builder.add(r)
     for n, (metres, secs, intensity) in enumerate(laps):
         lap = LapMessage()

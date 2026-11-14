@@ -1,7 +1,8 @@
 """Garmin activity FIT file -> the km splits and laps that review.py reads.
 
 Pure: ZIP bytes in, dict out. Both lists are cumulative, like the stored rows: splits carry
-`distance` (km), `seconds` and `heartRate`; laps carry `endDistance` (km), `endDuration`
+`distance` (km), `seconds` and `heartRate`, plus `cadence` (steps/min), `stepLength` (m) and `contact`
+(ground contact, ms), each None when the file has none; laps carry `endDistance` (km), `endDuration`
 (s) and `lapType` ("work" for an active rep when the FIT holds a workout with 2+ active steps,
 otherwise "general" for every lap).
 """
@@ -23,6 +24,8 @@ MIN_REPS = 2  # laps are typed only for a workout with this many active steps; o
 FILE_CRC = 2  # bytes after each segment's records
 # FIT intensity enum: 0 active, 1 rest, 2 warmup, 3 cooldown, 4 recovery, 5 interval, 6 other
 LAP_TYPES = {0: "work", 1: "rest", 2: "warmup", 3: "cooldown", 4: "rest", 5: "work"}
+MAX_STANCE_MS = 6553  # at or above: fit-tool's invalid sentinel, not a reading
+MAX_STEP_MM = 65535
 
 
 _LENIENT = threading.Lock()
@@ -87,34 +90,57 @@ def _active_steps(steps: list[tuple]) -> int:
     return total
 
 
-def _splits(records: list[tuple[float, float, int | None]]) -> list[dict]:
-    """records: (ms timestamp, metres, hr). One split per whole km plus a final partial one,
-    time counted only while moving and interpolated at each km boundary."""
-    out, secs, nxt, hrs = [], 0.0, 1000.0, []
+def _mean(xs: list, nd: int | None):
+    if not xs:
+        return None
+    m = sum(xs) / len(xs)
+    return round(m) if nd is None else round(m, nd)
+
+
+def _splits(records: list[tuple]) -> list[dict]:
+    """records: (ms timestamp, metres, hr, steps/min, step m, stance ms). One split per whole km plus a final
+    partial one, time counted only while moving and interpolated at each km boundary. HR, cadence, step length
+    and contact are the mean of the split's records (1 a second while running) that have a value."""
+    out, secs, nxt = [], 0.0, 1000.0
+    acc: tuple[list, list, list, list] = ([], [], [], [])
     prev = None
-    for ts, dist, hr in records:
+
+    def close(distance, seconds):
+        hrs, spm, step, stance = acc
+        out.append({"distance": distance, "seconds": seconds, "heartRate": _mean(hrs, None),
+                    "cadence": _mean(spm, 1), "stepLength": _mean(step, 2), "contact": _mean(stance, None)})
+        for xs in acc:
+            xs.clear()
+
+    for ts, dist, hr, spm, step, stance in records:
         if prev is not None:
             pts, pdist, psecs = prev
             gap = (ts - pts) / 1000
-            step = gap if gap <= PAUSE_S else 0.0
-            secs = psecs + step
+            move = gap if gap <= PAUSE_S else 0.0
+            secs = psecs + move
             while dist >= nxt and dist > pdist:
-                at = psecs + step * (nxt - pdist) / (dist - pdist)
-                out.append({"distance": nxt / 1000, "seconds": at,
-                            "heartRate": round(sum(hrs) / len(hrs)) if hrs else None})
-                hrs, nxt = [], nxt + 1000.0
-        if hr:
-            hrs.append(hr)
+                close(nxt / 1000, psecs + move * (nxt - pdist) / (dist - pdist))
+                nxt += 1000.0
+        for xs, v in zip(acc, (hr, spm, step, stance)):
+            if v:
+                xs.append(v)
         prev = (ts, dist, secs)
     if prev is not None and prev[1] - (nxt - 1000.0) > MIN_TAIL_M:
-        out.append({"distance": prev[1] / 1000, "seconds": prev[2],
-                    "heartRate": round(sum(hrs) / len(hrs)) if hrs else None})
+        close(prev[1] / 1000, prev[2])
     return out
 
 
+def _form(m) -> tuple:
+    """(steps/min, step length m, stance ms) from a record; None where the watch didn't write one."""
+    spm = 2 * (m.cadence + (m.fractional_cadence or 0)) if m.cadence else None
+    step = m.step_length / 1000 if m.step_length and m.step_length < MAX_STEP_MM else None
+    stance = m.stance_time if m.stance_time and m.stance_time < MAX_STANCE_MS else None
+    return spm, step, stance
+
+
 def details(zip_bytes: bytes) -> dict:
-    """Keeps only (timestamp, distance, hr) per record, lap totals and workout-step info as they're decoded."""
-    records: list[tuple[float, float, int | None]] = []
+    """Keeps only (timestamp, distance, hr, cadence, step length, stance) per record, lap totals and workout-step info as they're decoded."""
+    records: list[tuple] = []
     laps_raw: list[tuple[float, float, int]] = []
     steps: list[tuple] = []
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
@@ -125,7 +151,7 @@ def details(zip_bytes: bytes) -> dict:
     for m in _messages(data):
         if m.name == "record":
             if m.timestamp is not None and m.distance is not None:
-                records.append((m.timestamp, m.distance, m.heart_rate))
+                records.append((m.timestamp, m.distance, m.heart_rate, *_form(m)))
         elif m.name == "lap":
             laps_raw.append((m.total_distance or 0.0, m.total_timer_time or 0.0,
                              int(m.intensity if m.intensity is not None else 0)))
