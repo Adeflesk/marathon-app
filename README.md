@@ -44,8 +44,10 @@ week is never trimmed.
 - **The next run decides.** If that run shows a higher heart rate at easy pace or more drift than your
   recent runs, or it's a hard session that fell short of its reps, the suspicion turns into advice; if it
   looks normal, the note stays a note.
-- **Take the trim:** the rest of that week at 90%, one rep off the next session, and strength held at its
-  current loads. You choose; nothing happens until you press it.
+- **Take the trim:** the rest of that week at 90%, one rep off the next session (or the whole session at 90%
+  when it has no rep to spare), and strength held at its current loads. You choose; nothing happens until you
+  press it. It starts today, or tomorrow if today's run is already in; pressed on a Sunday after the run, it
+  covers the next week. Once pressed, it stays put: syncing runs never moves or undoes it.
 - **Make the next run easy:** if HRV is still low three nights after the advice (or two more runs in), the
   warning turns firm and this second button appears: your next run becomes an easy run at 80% of its km.
 - It clears when HRV is back in range two nights running and the 7-day average is no longer low.

@@ -141,8 +141,10 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   `SyncError` messages on the dashboard. `GARMIN_API_KEY_EXPIRES` (YYYY-MM-DD) gives `key_expiry()`; the
   dashboard warns from 7 days before. The `probe` CLI saves raw responses for field checking.
 - `app/fitfile.py` — pure: an activity FIT ZIP to the cumulative km splits and laps `review.py` reads. Laps are
-  typed `work` only when the file holds a workout with 2+ active steps; lenient on bad UTF-8. Uses fit-tool's
-  private `_project_raw` (version pinned in requirements).
+  typed `work` only when the file holds a workout with 2+ active steps; lenient on bad UTF-8. Streams record by
+  record, keeping only (time, distance, HR), laps and workout steps, so a 10 km file adds ~7 MB (the Fly VM has
+  256 MB). Uses fit-tool's private `_project_raw` and `WireDecoder._looks_like_header` (version pinned in
+  requirements).
 - `app/garmin_sync.py` — `sync_runs()` pages the activity search, upserts `activities`, then fetches the FIT ZIP
   once per new run into `run_files`/`run_details` (`run_source` marks Garmin rows); `sync_wellness()` fills
   `wellness` (HRV, resting HR, sleep, stress, weight); `sync()` does both. A Garmin run replaces the matching
