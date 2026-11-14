@@ -139,15 +139,21 @@ def _form(m) -> tuple:
 
 
 def details(zip_bytes: bytes) -> dict:
-    """Keeps only (timestamp, distance, hr, cadence, step length, stance) per record, lap totals and workout-step info as they're decoded."""
-    records: list[tuple] = []
-    laps_raw: list[tuple[float, float, int]] = []
-    steps: list[tuple] = []
+    """details_from_fit() of the .fit inside a Garmin activity ZIP."""
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
         name = next((n for n in z.namelist() if n.lower().endswith(".fit")), None)
         if name is None:
             raise ValueError("no .fit file in the activity ZIP")
         data = z.read(name)
+    return details_from_fit(data)
+
+
+def details_from_fit(data: bytes) -> dict:
+    """Keeps only (timestamp, distance, hr, cadence, step length, stance) per record, lap totals and workout-step
+    info as they're decoded."""
+    records: list[tuple] = []
+    laps_raw: list[tuple[float, float, int]] = []
+    steps: list[tuple] = []
     for m in _messages(data):
         if m.name == "record":
             if m.timestamp is not None and m.distance is not None:

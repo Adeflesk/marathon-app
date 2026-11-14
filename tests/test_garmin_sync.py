@@ -53,7 +53,7 @@ def garmin(monkeypatch):
     monkeypatch.setattr(garmin_sync.fitfile, "details", fake_details)
     db.init()
     with db.conn() as c:
-        for t in ("activities", "run_details", "run_files", "run_source", "meta"):
+        for t in ("activities", "run_details", "run_files", "run_source", "run_steps", "steps", "meta"):
             c.execute(f"DELETE FROM {t}")
     g.client = REAL_CLIENT(transport=httpx.MockTransport(handler))
     return g
@@ -171,3 +171,59 @@ def test_two_runs_a_day_pair_by_distance(garmin):
 def test_other_run_types_are_runs(garmin, type_key):
     garmin.runs = [run(1, "2026-11-12", 5000, type_key=type_key)]
     assert sync(garmin) == 1
+
+
+# --- steps per run, and db.steps() ---
+
+def test_run_steps_saved_from_search(garmin):
+    garmin.runs = [dict(run(1, "2026-11-10", 12000), steps=11800), run(2, "2026-11-11", 5000)]
+    sync(garmin)
+    with db.conn() as c:
+        assert [tuple(r) for r in c.execute("SELECT id, steps FROM run_steps")] == [(1, 11800)]
+
+
+def test_db_steps_subtracts_runs_and_marks_unknown(garmin):
+    garmin.runs = [dict(run(1, "2026-11-10", 12000), steps=11800), run(2, "2026-11-11", 5000)]
+    sync(garmin)
+    with db.conn() as c:
+        for d in ("2026-11-10", "2026-11-11", "2026-11-12"):
+            c.execute("INSERT INTO steps(date, total) VALUES (?, 20000)", (d,))
+    assert db.steps() == [{"date": "2026-11-10", "total": 20000, "run": 11800},
+                          {"date": "2026-11-11", "total": 20000, "run": None},
+                          {"date": "2026-11-12", "total": 20000, "run": 0}]
+
+
+# --- backfill: older runs' splits re-derived from the stored FIT ---
+
+def _stored_run(i, day, splits):
+    from .fitdata import make_fit
+    recs = [(t, t * 3.0, 140, 176, 1000, 250) for t in range(1100)]
+    with db.conn() as c:
+        c.execute("INSERT INTO activities(id, date, km, seconds, avg_hr) VALUES (?,?,3.3,1100,140)", (i, day))
+        c.execute("INSERT INTO run_source(id, source) VALUES (?, 'garmin')", (i,))
+        c.execute("INSERT INTO run_files(id, fit) VALUES (?, ?)", (i, make_fit(recs, [], False)))
+        c.execute("INSERT INTO run_details(id, splits, laps) VALUES (?, ?, '[]')", (i, json.dumps(splits)))
+
+
+def _splits_of(i):
+    with db.conn() as c:
+        return json.loads(c.execute("SELECT splits FROM run_details WHERE id=?", (i,)).fetchone()[0])
+
+
+def test_backfill_rederives_details_without_cadence(garmin, monkeypatch):
+    _stored_run(1, "2026-11-10", [{"distance": 1.0, "seconds": 333, "heartRate": 140}])
+    calls = []
+    real = garmin_sync.fitfile.details_from_fit
+    monkeypatch.setattr(garmin_sync.fitfile, "details_from_fit", lambda b: calls.append(1) or real(b))
+    garmin_sync._backfill(10)
+    assert _splits_of(1)[0]["cadence"] == 176.0
+    garmin_sync._backfill(10)
+    assert len(calls) == 1  # done once: re-derived splits carry the key
+
+
+def test_backfill_limit_newest_first(garmin):
+    old = [{"distance": 1.0, "seconds": 333, "heartRate": 140}]
+    _stored_run(1, "2026-11-09", old)
+    _stored_run(2, "2026-11-10", old)
+    garmin_sync._backfill(1)
+    assert "cadence" in _splits_of(2)[0] and "cadence" not in _splits_of(1)[0]

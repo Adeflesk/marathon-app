@@ -10,6 +10,7 @@ REAL_CLIENT = httpx.Client
 
 HRV, SLEEP, WEIGHT, HR = "/hrv-service/hrv/daily/", "/sleep-service/sleep/dailySleepSummariesByDate", \
     "/weight-service/weight/range/", "/wellness-service/wellness/dailyHeartRate"
+STEPS = "/usersummary-service/stats/steps/daily/"
 DAYS = ["2026-11-11", "2026-11-12", "2026-11-13"]
 
 
@@ -19,7 +20,7 @@ def garmin(monkeypatch):
     class G:
         pass
     g = G()
-    g.hrv, g.sleep, g.weight, g.rhr, g.calls = {}, {}, {}, {}, []
+    g.hrv, g.sleep, g.weight, g.rhr, g.steps, g.calls = {}, {}, {}, {}, {}, []
 
     def handler(req):
         if "token" in req.url.path:
@@ -37,6 +38,10 @@ def garmin(monkeypatch):
         if p.startswith(WEIGHT):
             return httpx.Response(200, json={"dailyWeightSummaries": [
                 {"summaryDate": d, "latestWeight": {"weight": w}} for d, w in sorted(g.weight.items())]})
+        if p.startswith(STEPS):
+            s, e = p[len(STEPS):].split("/")
+            return httpx.Response(200, json=[{"calendarDate": d, "totalSteps": n, "stepGoal": 8000}
+                                             for d, n in sorted(g.steps.items()) if s <= d <= e])
         if p == HR:
             d = q["date"]
             return httpx.Response(200, json={"calendarDate": d, "restingHeartRate": g.rhr.get(d),
@@ -47,6 +52,7 @@ def garmin(monkeypatch):
     db.init()
     with db.conn() as c:
         c.execute("DELETE FROM wellness")
+        c.execute("DELETE FROM steps")
         c.execute("DELETE FROM meta")
     g.client = REAL_CLIENT(transport=httpx.MockTransport(handler))
     return g
@@ -189,3 +195,25 @@ def test_quick_sync_one_call_per_range_endpoint_and_four_rhr_days(full_garmin):
     assert len(got["rhr"]) == 4
     assert got["search"] == [(today - timedelta(days=60)).isoformat()]
     assert db.get_meta("last_sync") is not None
+
+
+# --- daily steps ---
+
+def test_steps_range_saved_in_14_day_chunks(garmin):
+    start = date(2026, 10, 18)
+    days = [(start + timedelta(days=i)).isoformat() for i in range(27)]
+    garmin.steps = {d: 20000 + i for i, d in enumerate(days)}
+    garmin.steps[days[3]] = None  # a day the watch has nothing for
+    sync(garmin, days[0], days[-1])
+    assert len([p for p, _ in garmin.calls if p.startswith(STEPS)]) == 2
+    got = {r["date"]: r["total"] for r in db.steps()}
+    assert len(got) == 26 and days[3] not in got and got[days[0]] == 20000
+
+
+def test_full_sync_backfills_and_quick_sync_does_not(full_garmin, monkeypatch):
+    seen = []
+    monkeypatch.setattr(garmin_sync, "_backfill", lambda limit: seen.append(limit))
+    today = date.today()
+    garmin_sync.sync(today - timedelta(days=10))
+    garmin_sync.sync(today - timedelta(days=10), **garmin_sync.QUICK)
+    assert seen == [garmin_sync.BACKFILL_PER_SYNC]
