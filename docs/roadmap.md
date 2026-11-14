@@ -45,6 +45,9 @@ Needed from about week 8 (long runs of 90 minutes and more).
       original FIT files, and HRV, sleep, resting HR and weight come with them.
 - [x] **Recovery signal:** HRV low three nights (or a low 7-day average), confirmed by the next run, gives
       advice with a trim you choose to take; a firm warning if it persists.
+- [x] **Form and steps** (14 Nov 2026): long runs summarised against the planned long pace; a form note when
+      cadence falls or the stride lengthens late in a run; cadence at easy pace on Progress; daily on-feet steps
+      against ankle trouble, noted only on a repeat pattern.
 - [ ] Known gaps (PR #18): on a two-run day, a later re-pairing could swap a run's splits back to Smashrun's;
       a trim pressed on the Sunday before race week does nothing and doesn't say so.
 - [x] **Home-screen app:** a web app manifest and icon; added from Chrome it opens full screen.

@@ -124,3 +124,25 @@ def test_decoding_streams_instead_of_holding_every_message():
         tracemalloc.stop()
     assert len(d["splits"]) == 4
     assert peak < 8_000_000, peak
+
+
+def with_form(recs, spm=lambda m: 176, step=1100, stance=250):
+    return [(t, m, hr, spm(m), step, stance) for t, m, hr in recs]
+
+
+def test_splits_carry_cadence_step_length_and_contact():
+    s = fitfile.details(make_zip(with_form(steady(2.5, 333)), [], False))["splits"]
+    assert [x["cadence"] for x in s] == [176.0] * 3
+    assert [x["stepLength"] for x in s] == [1.1] * 3
+    assert [x["contact"] for x in s] == [250] * 3
+
+
+def test_cadence_is_time_weighted_per_split():
+    recs = with_form(steady(2, 333), spm=lambda m: 170 if m < 1000 else 180)
+    s = fitfile.details(make_zip(recs, [], False))["splits"]
+    assert [x["cadence"] for x in s[:2]] == [170.0, 180.0]
+
+
+def test_file_without_cadence_gives_none_keys():
+    s = fitfile.details(make_zip(steady(2.5), [], False))["splits"]
+    assert all(x["cadence"] is None and x["stepLength"] is None and x["contact"] is None for x in s)

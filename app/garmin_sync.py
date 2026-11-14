@@ -87,6 +87,29 @@ def _fetch_details(client, runs: list[tuple[str, int]], limit: int) -> None:
                       (i, json.dumps(d["splits"]), json.dumps(d["laps"])))
 
 
+BACKFILL_PER_SYNC = 4  # older runs re-derived from run_files per full Sync (~1 s per 5 km here, slower on Fly)
+
+
+def _backfill(limit: int) -> None:
+    """Re-derive the details of Garmin runs stored before splits carried cadence, from their stored FIT, newest
+    first, one at a time. Re-derived splits always have the key (None without cadence), so each run is done once."""
+    with db.conn() as c:
+        rows = c.execute("SELECT d.id, d.splits FROM run_details d JOIN run_files f ON f.id = d.id "
+                         "JOIN activities a ON a.id = d.id ORDER BY a.date DESC, d.id DESC").fetchall()
+    todo = [r["id"] for r in rows if any("cadence" not in s for s in json.loads(r["splits"] or "[]"))][:limit]
+    for i in todo:
+        with db.conn() as c:
+            fit = c.execute("SELECT fit FROM run_files WHERE id=?", (i,)).fetchone()["fit"]
+        try:
+            d = fitfile.details_from_fit(fit)
+        except Exception as exc:
+            _failed(i, f"backfill {type(exc).__name__}: {exc}")
+            continue
+        with db.conn() as c:
+            c.execute("UPDATE run_details SET splits=?, laps=? WHERE id=?",
+                      (json.dumps(d["splits"]), json.dumps(d["laps"]), i))
+
+
 def sync_runs(client, since, max_details: int = MAX_DETAILS_PER_SYNC) -> int:
     """Save runs from `since` on; returns how many were saved."""
     saved: list[tuple[int, str, float]] = []
@@ -112,6 +135,8 @@ def sync_runs(client, since, max_details: int = MAX_DETAILS_PER_SYNC) -> int:
                 c.execute("INSERT OR REPLACE INTO activities(id, date, km, seconds, avg_hr) VALUES (?,?,?,?,?)",
                           (i, start[:10], km, int(a.get("duration") or 0), round(avg_hr) if avg_hr else None))
                 c.execute("INSERT OR REPLACE INTO run_source(id, source) VALUES (?, 'garmin')", (i,))
+                if isinstance(a.get("steps"), (int, float)):
+                    c.execute("INSERT OR REPLACE INTO run_steps(id, steps) VALUES (?,?)", (i, int(a["steps"])))
                 saved.append((i, start[:10], km))
                 runs.append((start, i))
     with db.conn() as c:
@@ -128,6 +153,8 @@ HRV_PATH = "/hrv-service/hrv/daily/{s}/{e}"
 SLEEP_PATH = "/sleep-service/sleep/dailySleepSummariesByDate"
 WEIGHT_PATH = "/weight-service/weight/range/{s}/{e}"
 RHR_PATH = "/wellness-service/wellness/dailyHeartRate"
+STEPS_PATH = "/usersummary-service/stats/steps/daily/{s}/{e}"
+STEPS_CHUNK_DAYS = 14  # the steps range endpoint, tried with 14 days
 COLUMNS = ("hrv_night", "hrv_week_avg", "hrv_low", "hrv_high", "rhr", "sleep_s", "sleep_score", "stress_avg",
            "weight_kg")
 
@@ -203,6 +230,27 @@ def _rhr_days(since: date, until: date, limit: int = RHR_DAYS_PER_SYNC) -> list[
     return [d.isoformat() for d in want if d in always or d.isoformat() not in have][:limit]
 
 
+def _steps(client, since: date, until: date) -> None:
+    """Daily step totals into `steps`, STEPS_CHUNK_DAYS at a time; a day without a total is left out."""
+    s = since
+    while s <= until:
+        e = min(s + timedelta(days=STEPS_CHUNK_DAYS - 1), until)
+        try:  # steps are only shown, never acted on: a failure here mustn't stop the rest of the sync
+            body = _json(garmin_api.get(client, STEPS_PATH.format(s=s, e=e)))
+        except garmin_api.SyncError as exc:
+            log.warning("steps %s..%s: %s", s, e, exc)
+            body = []
+        if not isinstance(body, list):
+            log.warning("steps %s..%s: unexpected body %.100r", s, e, body)
+            body = []
+        with db.conn() as c:
+            for item in body:
+                day, n = str(item.get("calendarDate") or "")[:10], _num(item.get("totalSteps"), int)
+                if len(day) == 10 and n is not None:
+                    c.execute("INSERT OR REPLACE INTO steps(date, total) VALUES (?,?)", (day, n))
+        s = e + timedelta(days=1)
+
+
 def sync_wellness(client, since: date, until: date, rhr_days: int = RHR_DAYS_PER_SYNC) -> int:
     """Save HRV, sleep, weight (range endpoints) and resting HR (per day) from `since` to `until`; returns days touched."""
     days = _range(client, since, until, HRV_PATH, lambda s, e: None, lambda b: b.get("hrvSummaries") or [],
@@ -211,6 +259,7 @@ def sync_wellness(client, since: date, until: date, rhr_days: int = RHR_DAYS_PER
                    lambda b: b or [], "sleep", "calendarDate", _sleep)
     days |= _range(client, since, until, WEIGHT_PATH, lambda s, e: {"includeAll": "true"},
                    lambda b: b.get("dailyWeightSummaries") or [], "weight", "summaryDate", _weight)
+    _steps(client, since, until)
     for day in _rhr_days(since, until, rhr_days):
         r = garmin_api.get(client, RHR_PATH, {"date": day})
         if r.status_code >= 400:
@@ -228,12 +277,13 @@ def sync_wellness(client, since: date, until: date, rhr_days: int = RHR_DAYS_PER
 QUICK_WELLNESS_DAYS = 27  # sync on open: range endpoints from this many days back, one chunk (one call) each
 QUICK_RHR_DAYS = 4  # sync on open: resting-HR calls (one per day)
 QUICK = {"max_details": 4, "timeout": 8, "wellness_days": QUICK_WELLNESS_DAYS,
-         "rhr_days": QUICK_RHR_DAYS}  # sync on open: the page waits, so fetch less
+         "rhr_days": QUICK_RHR_DAYS, "backfill": 0}  # sync on open: the page waits, so fetch less
 WELLNESS_LEAD = 32  # days of wellness before `since`, so the 30-day resting-HR baseline exists
 
 
 def sync(since: date, max_details: int = MAX_DETAILS_PER_SYNC, timeout: float = garmin_api.TIMEOUT,
-         wellness_days: int | None = None, rhr_days: int = RHR_DAYS_PER_SYNC) -> int:
+         wellness_days: int | None = None, rhr_days: int = RHR_DAYS_PER_SYNC,
+         backfill: int = BACKFILL_PER_SYNC) -> int:
     """Runs from `since`, then wellness from `since` - 32 days (or only the last `wellness_days`), with at most
     `rhr_days` resting-HR calls. Returns the number of runs saved. Sets `last_sync` on success: weeks before it
     are known."""
@@ -241,6 +291,8 @@ def sync(since: date, max_details: int = MAX_DETAILS_PER_SYNC, timeout: float = 
     start = today - timedelta(days=wellness_days) if wellness_days is not None else since - timedelta(days=WELLNESS_LEAD)
     with httpx.Client(timeout=timeout) as client:
         n = sync_runs(client, since, max_details)
+        if backfill:
+            _backfill(backfill)
         sync_wellness(client, start, today, rhr_days)
     db.set_meta("last_sync", datetime.now().isoformat(timespec="seconds"))
     return n

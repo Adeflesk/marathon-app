@@ -95,6 +95,12 @@ def _pain_dates(logs) -> list[date]:
     return out
 
 
+def trouble_dates(checks, logs) -> set[date]:
+    """Days the ankle was worse: a "worse than usual" morning check, or logged ankle pain the flag counts. The
+    weekly check-in isn't tied to a day, so it's left out."""
+    return {_d(c["date"]) for c in checks if c.get("worse")} | set(_pain_dates(logs))
+
+
 def _triggers(checks, logs, checkins, weeks) -> list[date]:
     """Dates that raise the ankle flag: worse checks, logged ankle pain, check-in pain ≥3 (week's Sunday)."""
     out = [_d(c["date"]) for c in checks if c.get("worse")] + _pain_dates(logs)

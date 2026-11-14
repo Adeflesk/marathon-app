@@ -106,3 +106,77 @@ def test_strides_without_work_laps_say_so(settings):
     r = stride_review(settings, [("general", 2313, 5.85929)])
     assert r["reps"] == [] and r["drift"] is None and "watch workout" in r["note"]
     assert r["verdict"] != "bad"
+
+
+def steady(n, pace, hr=145):
+    return [{"distance": i, "seconds": pace * i, "heartRate": hr} for i in range(1, n + 1)]
+
+
+def test_long_run_without_mp_names_planned_long_pace(settings):
+    lr = {"type": "long", "km": 12}
+    r = review.review(lr, {"km": 12, "seconds": 12 * 373}, {"splits": steady(12, 373), "laps": []}, settings["paces"])
+    assert r["headline"].startswith("Long run at 6:13/km (planned 6:30)")
+    assert r["verdict"] == "good"
+
+
+def test_long_run_quicker_than_mp_plus_20_warns(settings):
+    lr = {"type": "long", "km": 12}
+    r = review.review(lr, {"km": 12, "seconds": 12 * 355}, {"splits": steady(12, 355), "laps": []}, settings["paces"])
+    assert r["verdict"] == "warn" and "quicker than long-run pace" in r["headline"]
+
+
+def test_tiny_last_split_dropped():
+    raw = steady(12, 373) + [{"distance": 12.01, "seconds": 12 * 373 + 6, "heartRate": 143}]
+    assert len(review.splits(raw)) == 12
+
+
+def form_run(n, cad, stride=lambda k: 1.0, pace=lambda k: 400):
+    """Stored splits for an n km run; cad/stride/pace give each km's value (km counted from 1)."""
+    out, t = [], 0
+    for k in range(1, n + 1):
+        t += pace(k)
+        out.append({"distance": k, "seconds": t, "heartRate": 145, "cadence": cad(k), "stepLength": stride(k),
+                    "contact": 250})
+    return out
+
+
+def test_form_note_cadence_drop():
+    sp = review.splits(form_run(12, lambda k: 176 if k <= 8 else 170))
+    assert review.form_note({"type": "easy"}, sp) == "Cadence fell from 176 to 170 steps/min in the last 4 km."
+
+
+def test_form_note_stride_up_without_quicker_pace():
+    sp = review.splits(form_run(12, lambda k: 176, stride=lambda k: 1.0 if k <= 8 else 1.06))
+    assert review.form_note({"type": "easy"}, sp) == "Your stride lengthened in the last 4 km (1.00 → 1.06 m)."
+
+
+def test_form_note_none_under_8_km_or_without_cadence():
+    assert review.form_note({"type": "easy"}, review.splits(form_run(7, lambda k: 176 if k < 5 else 168))) == ""
+    assert review.form_note({"type": "easy"}, review.splits(form_run(12, lambda k: None))) == ""
+    old = [{"distance": i, "seconds": 400 * i, "heartRate": 140} for i in range(1, 13)]  # stored before cadence
+    assert review.form_note({"type": "easy"}, review.splits(old)) == ""
+
+
+def test_form_note_mp_long_run_uses_part_before_finish():
+    sp = review.splits(form_run(18, lambda k: 176 if k <= 14 else 184, pace=lambda k: 390 if k <= 14 else 341))
+    assert review.form_note({"type": "long", "mp_km": 4}, sp) == ""
+    sp = review.splits(form_run(18, lambda k: 176 if k <= 10 else 170))
+    assert "Cadence fell" in review.form_note({"type": "long", "mp_km": 4}, sp)
+
+
+def test_form_note_skipped_for_sessions_and_strides(settings):
+    raw = form_run(12, lambda k: 176 if k <= 8 else 170)
+    q = next(x for x in generate(settings, TODAY)[7]["workouts"] if "steps" in x)
+    r = review.review(q, {"km": 12, "seconds": 4800}, {"splits": raw, "laps": []}, settings["paces"])
+    assert "Cadence" not in r["note"]
+    st = planned(settings, 2, "strides")
+    r = review.review(st, {"km": 12, "seconds": 4800}, {"splits": raw, "laps": []}, settings["paces"])
+    assert "Cadence" not in r["note"]
+
+
+def test_form_note_does_not_change_verdict(settings):
+    raw = form_run(12, lambda k: 176 if k <= 8 else 170)
+    r = review.review(planned(settings, 1, "easy"), {"km": 12, "seconds": 4800}, {"splits": raw, "laps": []},
+                      settings["paces"])
+    assert r["verdict"] == "good" and r["note"].startswith("Cadence fell")
+    assert r["splits"][0]["cadence"] == 176 and r["splits"][0]["stride"] == 1.0

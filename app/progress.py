@@ -3,6 +3,7 @@
 Pure: callers pass what build_view() computed (weeks with reviews, guard, strength and ankle state, the
 settings with the goal and the latest result). Nothing here is stored; like the plan, it's recomputed.
 """
+import math
 from datetime import date, timedelta
 from statistics import median
 
@@ -32,6 +33,79 @@ def fitness_trend(weeks: list[dict], ref_pace: float) -> list[dict]:
                     hrs.append(sp["hr"])
         out.append({"week": w["week"], "hr": median(hrs) if len(hrs) >= MIN_SPLITS else None, "n": len(hrs)})
     return out
+
+
+CADENCE_STEADY = 3  # steps/min: the last 4 weeks' median within this of the 4 before reads as steady
+
+
+def cadence_trend(weeks: list[dict], ref_pace: float) -> list[dict]:
+    """Per week to now: median cadence (steps/min) and step length (m) on the splits fitness_trend uses, so pace
+    doesn't move it. None for a week with too few splits carrying cadence."""
+    out = []
+    for w in _to_date(weeks):
+        cad, stride = [], []
+        for wo in w["workouts"]:
+            if wo["type"] not in ("easy", "long") or "steps" in wo or not wo.get("review"):
+                continue
+            for sp in wo["review"]["splits"][1:]:
+                if sp["km"] >= 0.9 and sp.get("cadence") and abs(sp["pace"] - ref_pace) <= PACE_BAND:
+                    cad.append(sp["cadence"])
+                    if sp.get("stride"):
+                        stride.append(sp["stride"])
+        ok = len(cad) >= MIN_SPLITS
+        out.append({"week": w["week"], "cadence": median(cad) if ok else None,
+                    "stride": median(stride) if ok and stride else None, "n": len(cad)})
+    return out
+
+
+def cadence_reading(trend: list[dict]) -> str | None:
+    """"steady", "rising" or "falling": the last 4 weeks' median cadence against the 4 before (2+ weeks in each)."""
+    last = [w["cadence"] for w in trend[-4:] if w["cadence"] is not None]
+    before = [w["cadence"] for w in trend[-8:-4] if w["cadence"] is not None]
+    if len(last) < 2 or len(before) < 2:
+        return None
+    diff = median(last) - median(before)
+    return "steady" if abs(diff) <= CADENCE_STEADY else ("rising" if diff > 0 else "falling")
+
+
+HEAVY_PCTL = 0.8  # a heavy day beats the top fifth of the user's own recent days (20k+ is their normal)
+BASELINE_DAYS = 28
+BASELINE_MIN = 14  # days with on-feet steps needed in the baseline before any day is called heavy
+PATTERN_DAYS = 28
+PATTERN_MIN = 2  # heavy days followed by ankle trouble needed before the page says anything
+PATTERN_GAP = 3  # days between two trouble days for them to be separate episodes, not one bad spell
+STEPS_DAYS = 56
+
+
+def steps_view(steps: list[dict], checks: list[dict], logs: list[dict], t: date) -> dict:
+    """Daily on-feet steps (Garmin's total less the day's runs) over 8 weeks to `t`, each marked heavy (above the
+    80th percentile of the previous 28 days' on-feet steps, from 14 or more of them) and trouble (an ankle-flag
+    row that day). `pattern`: heavy days in the last 28 days followed the next day by trouble, one per episode,
+    when there are 2 or more; else empty. Nothing is said about cause."""
+    trouble = ankle.trouble_dates(checks, logs)
+    on_feet = {}
+    for r in steps:  # unknown when a run has no step count yet, or Garmin's total hasn't caught up with the runs
+        v = r["total"] - r["run"] if r["run"] is not None else None
+        on_feet[date.fromisoformat(r["date"])] = v if v is not None and v >= 0 else None
+    days = []
+    for n in range(STEPS_DAYS - 1, -1, -1):
+        d = t - timedelta(days=n)
+        if d not in on_feet:
+            continue
+        v = on_feet[d]
+        base = sorted(x for k in range(1, BASELINE_DAYS + 1)
+                      if (x := on_feet.get(d - timedelta(days=k))) is not None)
+        heavy = (v is not None and len(base) >= BASELINE_MIN
+                 and v > base[math.ceil(HEAVY_PCTL * len(base)) - 1])
+        days.append({"date": d, "on_feet": v, "heavy": heavy, "trouble": d in trouble})
+    pattern, last = [], None
+    for x in days:
+        nxt = x["date"] + timedelta(days=1)
+        if x["heavy"] and (t - x["date"]).days < PATTERN_DAYS and nxt in trouble:
+            if last is None or (nxt - last).days >= PATTERN_GAP:
+                pattern.append(x["date"])
+                last = nxt
+    return {"days": days, "pattern": pattern if len(pattern) >= PATTERN_MIN else []}
 
 
 TREND_DAYS = 56
