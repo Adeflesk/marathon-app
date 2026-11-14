@@ -200,6 +200,7 @@ def progress_page(request: Request, msg: str = ""):
         "fitness": progress.fitness_trend(weeks, ref_pace), "ref_pace": ref_pace,
         "cadence": (cadence := progress.cadence_trend(weeks, ref_pace)),
         "cadence_reading": progress.cadence_reading(cadence),
+        "steps": progress.steps_view(db.steps(), db.checks(), db.logs(), t),
         "recovery_trend": progress.recovery_trend(db.wellness(), t),
         "trend_start": (t - timedelta(days=progress.TREND_DAYS - 1)).isoformat(),
         "long_runs": progress.long_runs(weeks), "plan": progress.plan_bars(weeks),

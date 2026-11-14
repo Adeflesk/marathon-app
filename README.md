@@ -62,6 +62,13 @@ marathon-pace finish was on pace, and sessions run from the watch workout are ch
 Strides are listed one by one but not judged, since they go by feel; the review checks that the running
 around them stayed easy. Heart-rate drift (second half against first) under 5% means the effort stayed
 steady. Strides days show no drift figure, because the strides lift your heart rate on purpose.
+A long run without a marathon-pace finish reads "Long run at 6:13/km (planned 6:30)".
+
+**Form note.** On easy and long runs of 8 km or more, the review says when your form faded: "Cadence fell from
+176 to 170 steps/min in the last 4 km", or "Your stride lengthened in the last 4 km" (at a pace no quicker). As
+you tire the stride gets longer and loads the ankle more, so it's worth noticing on the long runs. It's
+information only: it never changes the verdict or the plan. On a long run with a marathon-pace finish, only the
+steady running before the finish is compared. The km splits show cadence too.
 
 ## Progress
 
@@ -77,7 +84,15 @@ your goal, and marathon pace, the sessions and the watch files follow; **Back to
 back exactly. The app never changes the goal by itself.
 
 Below: charts of fitness, long runs and km planned against done, the ankle tests against their targets, and
-a summary of every finished week with one focus for the next. Last week's summary also shows on This week
+a summary of every finished week with one focus for the next. The Ankle section also shows:
+
+- **Cadence** at easy pace (same pace every week, so a quicker or slower run doesn't move it), with a reading
+  over the last 4 weeks: steady, rising or falling.
+- **Time on your feet:** Garmin's daily steps with your runs taken out, over 8 weeks, a dot on each day your
+  ankle was worse (a "worse than usual" morning check or ankle pain logged). A heavy day is one in your own top
+  fifth of the previous 4 weeks, since long days on your feet are normal for you. One heavy day gets no
+  message. Only when it repeats (twice in 4 weeks, a worse ankle the day after a heavy day, at least 3 days
+  apart) does it say so. It shows what happened after what, never that the steps caused it. Last week's summary also shows on This week
 on Monday and Tuesday. A week no sync has covered says so, since runs may be missing.
 
 ## Fuelling and race day

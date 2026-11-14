@@ -3,6 +3,7 @@
 Pure: callers pass what build_view() computed (weeks with reviews, guard, strength and ankle state, the
 settings with the goal and the latest result). Nothing here is stored; like the plan, it's recomputed.
 """
+import math
 from datetime import date, timedelta
 from statistics import median
 
@@ -65,6 +66,44 @@ def cadence_reading(trend: list[dict]) -> str | None:
         return None
     diff = median(last) - median(before)
     return "steady" if abs(diff) <= CADENCE_STEADY else ("rising" if diff > 0 else "falling")
+
+
+HEAVY_PCTL = 0.8  # a heavy day beats the top fifth of the user's own recent days (20k+ is their normal)
+BASELINE_DAYS = 28
+BASELINE_MIN = 14  # days with on-feet steps needed in the baseline before any day is called heavy
+PATTERN_DAYS = 28
+PATTERN_MIN = 2  # heavy days followed by ankle trouble needed before the page says anything
+PATTERN_GAP = 3  # days between two trouble days for them to be separate episodes, not one bad spell
+STEPS_DAYS = 56
+
+
+def steps_view(steps: list[dict], checks: list[dict], logs: list[dict], t: date) -> dict:
+    """Daily on-feet steps (Garmin's total less the day's runs) over 8 weeks to `t`, each marked heavy (above the
+    80th percentile of the previous 28 days' on-feet steps, from 14 or more of them) and trouble (an ankle-flag
+    row that day). `pattern`: heavy days in the last 28 days followed the next day by trouble, one per episode,
+    when there are 2 or more; else empty. Nothing is said about cause."""
+    trouble = ankle.trouble_dates(checks, logs)
+    on_feet = {date.fromisoformat(r["date"]): (r["total"] - r["run"] if r["run"] is not None else None)
+               for r in steps}
+    days = []
+    for n in range(STEPS_DAYS - 1, -1, -1):
+        d = t - timedelta(days=n)
+        if d not in on_feet:
+            continue
+        v = on_feet[d]
+        base = sorted(x for k in range(1, BASELINE_DAYS + 1)
+                      if (x := on_feet.get(d - timedelta(days=k))) is not None)
+        heavy = (v is not None and len(base) >= BASELINE_MIN
+                 and v > base[math.ceil(HEAVY_PCTL * len(base)) - 1])
+        days.append({"date": d, "on_feet": v, "heavy": heavy, "trouble": d in trouble})
+    pattern, last = [], None
+    for x in days:
+        nxt = x["date"] + timedelta(days=1)
+        if x["heavy"] and (t - x["date"]).days < PATTERN_DAYS and nxt in trouble:
+            if last is None or (nxt - last).days >= PATTERN_GAP:
+                pattern.append(x["date"])
+                last = nxt
+    return {"days": days, "pattern": pattern if len(pattern) >= PATTERN_MIN else []}
 
 
 TREND_DAYS = 56

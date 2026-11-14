@@ -126,7 +126,10 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   `verdict` (from `s["result"]`), `goal_options` (stretch = prediction × (1 − min(4%, 1% per 4 weeks left)),
   prediction, way back), `why_rows`, `ankle_table`, `summaries` (completed weeks; "Next week" = first rule
   that applies: ankle trigger, next week held, easy too quick, long-run drift, snacks < 4, strength missed,
-  test week).
+  test week), `cadence_trend`/`cadence_reading` (same split selection as `fitness_trend`; last 4 weeks' median
+  against the 4 before, ±3 steady), `steps_view(steps, checks, logs, t)` (on-feet = total − run steps; heavy =
+  above the 80th percentile of the previous 28 days, ≥ 14 of them; `pattern` only with 2+ heavy days in 28 followed
+  next day by `ankle.trouble_dates()`, episodes ≥ 3 days apart).
 - `app/fuel.py` — pure: `gel_minutes` (45, then every 35, none in the last 10; runs ≥ 90 min only),
   `long_run_note(km, mp_km, long_pace)`, `race_plan(mp, stations, gel_stations)` (first 5 km MP + 5, the rest
   quicker so the finish is MP × 42.195; gels before the first gel station carried, later ones at the last gel
@@ -140,7 +143,9 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   refresh token) cached in `meta` and re-fetched when under an hour is left; one retry on a 401; failures are
   `SyncError` messages on the dashboard. `GARMIN_API_KEY_EXPIRES` (YYYY-MM-DD) gives `key_expiry()`; the
   dashboard warns from 7 days before. The `probe` CLI saves raw responses for field checking.
-- `app/fitfile.py` — pure: an activity FIT ZIP to the cumulative km splits and laps `review.py` reads. Laps are
+- `app/fitfile.py` — pure: an activity FIT ZIP (`details`) or bare FIT (`details_from_fit`) to the cumulative km
+  splits and laps `review.py` reads; splits also carry `cadence` (steps/min = 2 × (cadence + fractional)),
+  `stepLength` (m) and `contact` (ms), None when the file has none. Laps are
   typed `work` only when the file holds a workout with 2+ active steps; lenient on bad UTF-8. Streams record by
   record, keeping only (time, distance, HR), laps and workout steps, so a 10 km file adds ~7 MB (the Fly VM has
   256 MB). Uses fit-tool's private `_project_raw` and `WireDecoder._looks_like_header` (version pinned in
@@ -150,7 +155,9 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   `wellness` (HRV, resting HR, sleep, stress, weight); `sync()` does both. A Garmin run replaces the matching
   older row (same date, km within 3% or 0.2 km), taking over its `run_details` until its own FIT arrives (FIT is
   fetched for runs with no `run_files` row). A FIT that fails is retried next sync, logged and counted in `meta`
-  `garmin_fit_failures`. An `activities` row with no `run_source` entry came from Smashrun, the previous source
+  `garmin_fit_failures`. `run_steps` gets each run's `steps` from the search; `_steps()` fills `steps` (daily
+  totals, 14-day chunks) during `sync_wellness`; full Sync re-derives up to `BACKFILL_PER_SYNC` (10) older runs'
+  details from `run_files` when their splits lack `cadence` (`QUICK` sets `backfill` 0). An `activities` row with no `run_source` entry came from Smashrun, the previous source
   (removed).
 - `app/recovery.py` — pure HRV episode state, recomputed per request. Starts on 3 nights below the HRV band or a
   low 7-day average; the next judged run (HR at easy pace, drift) confirms it (advice) or not (note); firm after
@@ -159,13 +166,18 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
 - `app/review.py` — pure post-run review, recomputed per request like the plan: per-km pace and HR from
   splits, heart-rate drift (second half against first, first km excluded), easy runs quicker than MP + 20 s
   flagged, the long run's MP finish checked from its last splits, and structured sessions checked rep by
-  rep from Garmin `work` laps (within 10 s/km is on pace). Strides days list each stride without judging it, skip drift, and
+  rep from Garmin `work` laps (within 10 s/km is on pace). A long run without an MP finish reads "Long run at
+  {pace} (planned {long})". `splits()` drops splits under `MIN_SPLIT_KM` (50 m) and carries `cadence`, `stride`,
+  `contact`; `form_note()` (easy and long runs, ≥ 8 full km with cadence; the part before an MP finish) notes
+  cadence down ≥ 4 steps/min or stride up ≥ 5% at a pace no quicker, early part against the last third. Never
+  changes the verdict. Strides days list each stride without judging it, skip drift, and
   warn (never "bad") only when the easy running around them is too quick. `build_view` attaches `review` to each planned
   workout whose day has a synced run with details (the day's longest run).
 - `app/db.py` — tables: `activities` (synced runs), `run_details` (JSON km splits and laps per run),
   `checkins` (keyed by week number), `strength_logs` (logged sets, weight, reps, rating, ankle pain),
   `snack_logs` (daily ankle snack ticks), `ankle_tests` (readiness test values), `ankle_checks` (morning ankle checks),
-  `moves` (a session's original date + `run`/`A`/`B` → new date, or NULL when skipped), `wellness` (daily HRV, resting HR, sleep, stress, weight), `recovery_trims` (recovery choices: date pressed + `trim`/`easy` + `start`, the first day it applies), `run_files` (original FIT per Garmin run), `run_source` (which activities came from Garmin), `results` (races and
+  `moves` (a session's original date + `run`/`A`/`B` → new date, or NULL when skipped), `wellness` (daily HRV, resting HR, sleep, stress, weight), `recovery_trims` (recovery choices: date pressed + `trim`/`easy` + `start`, the first day it applies), `run_files` (original FIT per Garmin run), `run_source` (which activities came from Garmin), `steps` (Garmin daily step totals), `run_steps` (each Garmin run's steps; `db.steps()` subtracts them per day at
+  read time, `run` None when a run has none), `results` (races and
   time trials: date, km, seconds), `goals` (goal changes: date, goal_time or "settings"; the latest wins), `fuel_logs` (date of a long run fuelled as planned) and `meta` (key/value; `last_sync` is written by a successful sync,
   `last_sync_try` by each sync on open).
   Schema is `CREATE IF NOT EXISTS` on startup; there are no migrations. `DB_PATH` env var overrides `data/marathon.db`.

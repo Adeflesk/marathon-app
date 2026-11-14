@@ -227,6 +227,23 @@
     <text x="320" y="95" text-anchor="end">now: {{ cp[-1].cadence|round|int }}</text>
   </svg>
   {% endif %}
+  {% set sd = steps.days|selectattr('on_feet')|list %}
+  {% if sd %}
+  <h3 style="margin-top:16px">Time on your feet</h3>
+  {% set pat = steps.pattern %}
+  {% if pat %}<p class="notice">{{ 'Twice' if pat|length == 2 else pat|length ~ ' times' }} in the last 4 weeks your ankle was worse the day after a heavy day on your feet ({% for x in pat %}{{ x.strftime('%a %-d %b') }}{{ ', ' if not loop.last }}{% endfor %}).</p>{% endif %}
+  <p class="mute small">Steps with your runs taken out. Heavy days are your top fifth; a dot marks a day your ankle was worse.</p>
+  {% set top = sd|map(attribute='on_feet')|max %}
+  {% set d0 = today %}
+  <svg class="chart" viewBox="0 0 340 100" role="img" aria-label="On-feet steps: latest {{ sd[-1].on_feet }}, highest {{ top }}{% if steps.days|selectattr('trouble')|list %}, ankle worse on {{ steps.days|selectattr('trouble')|list|length }} days{% endif %}">
+    {% for x in steps.days %}{% set xp = 20 + 300 * (55 - (d0 - x.date).days) / 55 %}
+    {% if x.on_feet %}{% set h = 70 * x.on_feet / top %}<rect class="{{ 'c-done' if x.heavy else 'c-none' }}" x="{{ (xp - 2)|round(1) }}" y="{{ (82 - h)|round(1) }}" width="4" height="{{ h|round(1) }}"><title>{{ x.date.strftime('%a %-d %b') }}: {{ x.on_feet }} steps{{ ', heavy' if x.heavy }}</title></rect>{% endif %}
+    {% if x.trouble %}<circle class="c-dot" cx="{{ xp|round(1) }}" cy="8" r="3"/>{% endif %}
+    {% endfor %}
+    <text x="20" y="95">8 weeks ago</text>
+    <text x="320" y="95" text-anchor="end">today</text>
+  </svg>
+  {% endif %}
 </section>
 
 <section class="summaries" aria-labelledby="sum-h" style="margin-top:24px">
