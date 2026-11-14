@@ -87,7 +87,7 @@ def _fetch_details(client, runs: list[tuple[str, int]], limit: int) -> None:
                       (i, json.dumps(d["splits"]), json.dumps(d["laps"])))
 
 
-BACKFILL_PER_SYNC = 10  # older runs whose splits predate cadence, re-derived from run_files per full Sync
+BACKFILL_PER_SYNC = 4  # older runs re-derived from run_files per full Sync (~1 s per 5 km here, slower on Fly)
 
 
 def _backfill(limit: int) -> None:
@@ -235,9 +235,16 @@ def _steps(client, since: date, until: date) -> None:
     s = since
     while s <= until:
         e = min(s + timedelta(days=STEPS_CHUNK_DAYS - 1), until)
-        body = _json(garmin_api.get(client, STEPS_PATH.format(s=s, e=e)))
+        try:  # steps are only shown, never acted on: a failure here mustn't stop the rest of the sync
+            body = _json(garmin_api.get(client, STEPS_PATH.format(s=s, e=e)))
+        except garmin_api.SyncError as exc:
+            log.warning("steps %s..%s: %s", s, e, exc)
+            body = []
+        if not isinstance(body, list):
+            log.warning("steps %s..%s: unexpected body %.100r", s, e, body)
+            body = []
         with db.conn() as c:
-            for item in body or []:
+            for item in body:
                 day, n = str(item.get("calendarDate") or "")[:10], _num(item.get("totalSteps"), int)
                 if len(day) == 10 and n is not None:
                     c.execute("INSERT OR REPLACE INTO steps(date, total) VALUES (?,?)", (day, n))

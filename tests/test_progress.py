@@ -257,3 +257,9 @@ def test_one_bad_spell_counts_once():
 def test_pattern_only_from_the_last_28_days():
     view = progress.steps_view(_spiky([40, 5]), [worse(39), worse(4)], [], T)
     assert view["pattern"] == []
+
+
+def test_negative_on_feet_is_unknown():
+    rows = step_rows([15000] * 28) + [{"date": T.isoformat(), "total": 5000, "run": 13000}]  # total lags the run
+    v = by_date(progress.steps_view(rows, [], [], T))
+    assert v[T]["on_feet"] is None and not v[T]["heavy"]

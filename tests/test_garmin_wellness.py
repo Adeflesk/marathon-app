@@ -217,3 +217,24 @@ def test_full_sync_backfills_and_quick_sync_does_not(full_garmin, monkeypatch):
     garmin_sync.sync(today - timedelta(days=10))
     garmin_sync.sync(today - timedelta(days=10), **garmin_sync.QUICK)
     assert seen == [garmin_sync.BACKFILL_PER_SYNC]
+
+
+def test_steps_failure_doesnt_stop_wellness(garmin, monkeypatch):
+    fill(garmin)
+    real = garmin_sync.garmin_api.get
+
+    def get(client, path, params=None):
+        if path.startswith(STEPS):
+            return httpx.Response(403, text="no scope")
+        return real(client, path, params)
+    monkeypatch.setattr(garmin_sync.garmin_api, "get", get)
+    assert sync(garmin) == 3
+    assert db.wellness()[-1]["rhr"] == 52 and db.steps() == []
+
+
+def test_steps_odd_body_ignored(garmin, monkeypatch):
+    fill(garmin)
+    real = garmin_sync.garmin_api.get
+    monkeypatch.setattr(garmin_sync.garmin_api, "get", lambda c, p, q=None: httpx.Response(200, json={"error": "x"})
+                        if p.startswith(STEPS) else real(c, p, q))
+    assert sync(garmin) == 3 and db.steps() == []

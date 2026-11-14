@@ -156,7 +156,7 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   older row (same date, km within 3% or 0.2 km), taking over its `run_details` until its own FIT arrives (FIT is
   fetched for runs with no `run_files` row). A FIT that fails is retried next sync, logged and counted in `meta`
   `garmin_fit_failures`. `run_steps` gets each run's `steps` from the search; `_steps()` fills `steps` (daily
-  totals, 14-day chunks) during `sync_wellness`; full Sync re-derives up to `BACKFILL_PER_SYNC` (10) older runs'
+  totals, 14-day chunks) during `sync_wellness`; full Sync re-derives up to `BACKFILL_PER_SYNC` (4) older runs'
   details from `run_files` when their splits lack `cadence` (`QUICK` sets `backfill` 0). An `activities` row with no `run_source` entry came from Smashrun, the previous source
   (removed).
 - `app/recovery.py` — pure HRV episode state, recomputed per request. Starts on 3 nights below the HRV band or a

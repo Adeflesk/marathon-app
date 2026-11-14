@@ -83,8 +83,10 @@ def steps_view(steps: list[dict], checks: list[dict], logs: list[dict], t: date)
     row that day). `pattern`: heavy days in the last 28 days followed the next day by trouble, one per episode,
     when there are 2 or more; else empty. Nothing is said about cause."""
     trouble = ankle.trouble_dates(checks, logs)
-    on_feet = {date.fromisoformat(r["date"]): (r["total"] - r["run"] if r["run"] is not None else None)
-               for r in steps}
+    on_feet = {}
+    for r in steps:  # unknown when a run has no step count yet, or Garmin's total hasn't caught up with the runs
+        v = r["total"] - r["run"] if r["run"] is not None else None
+        on_feet[date.fromisoformat(r["date"])] = v if v is not None and v >= 0 else None
     days = []
     for n in range(STEPS_DAYS - 1, -1, -1):
         d = t - timedelta(days=n)
