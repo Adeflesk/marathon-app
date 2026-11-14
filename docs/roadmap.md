@@ -40,10 +40,13 @@ Needed from about week 8 (long runs of 90 minutes and more).
 
 - [x] **Sync on its own:** This week and Progress sync when a run from yesterday or today is missing (at most
       every 15 minutes); a top line offers Sync now if it still isn't in.
-- [ ] **Smashrun full login:** waiting on Smashrun. Researched (Nov 2026): a registered app gets 12-week
-      access tokens and refresh tokens that last until revoked, so the app could renew itself after a one-time
-      "Connect Smashrun". Needs a client ID and secret from Smashrun (hi@smashrun.com); the user applied in
-      Oct 2026 with no reply yet. Until then: the 60-day token and the 7-day warning.
+- [x] **Garmin instead of Smashrun** (14 Nov 2026): Garmin's Personal API key lasts a year (7-day warning
+      before it runs out), so the Smashrun full-login request is no longer needed. Runs now come from the
+      original FIT files, and HRV, sleep, resting HR and weight come with them.
+- [x] **Recovery signal:** HRV low three nights (or a low 7-day average), confirmed by the next run, gives
+      advice with a trim you choose to take; a firm warning if it persists.
+- [ ] Known gaps (PR #18): on a two-run day, a later re-pairing could swap a run's splits back to Smashrun's;
+      a trim pressed on the Sunday before race week does nothing and doesn't say so.
 - [x] **Home-screen app:** a web app manifest and icon; added from Chrome it opens full screen.
 
 ## Decided against
@@ -57,7 +60,8 @@ Needed from about week 8 (long runs of 90 minutes and more).
 
 ## Also open (from the 29 Oct review)
 
-- [x] Set `SMASHRUN_TOKEN_ISSUED` (`fly secrets set SMASHRUN_TOKEN_ISSUED=YYYY-MM-DD`).
+- [x] Set `SMASHRUN_TOKEN_ISSUED` (`fly secrets set SMASHRUN_TOKEN_ISSUED=YYYY-MM-DD`). (Obsolete since the
+      Garmin switch; now `GARMIN_API_KEY_EXPIRES`.)
 - [ ] Week 7 time trial, then update paces (item 2 makes this an in-app step).
 - [ ] January: revisit the peak weeks (week 18: 32 km long run with a 12 km MP finish, 53% of the week;
       week 17's 10 and 10.5 km easy runs). Depends on how weeks 12–16 go.

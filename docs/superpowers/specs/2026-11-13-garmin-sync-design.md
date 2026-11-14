@@ -187,3 +187,23 @@ weight (changes too slowly to matter week to week).
 Module names, table names and exact columns, chart styling (follow the Progress page), wording of notes and
 warnings (plain, like the rest of the app), test layout, and the order of work — though Part 1 should land and be
 checked against the real account before Part 3 relies on its data.
+
+## Changed during the build (14 Nov 2026)
+
+What shipped differs from the text above in these places:
+
+- **Stress:** the Personal API has no daily stress average; `stress_avg` is Garmin's average stress during sleep,
+  shown as "sleep stress".
+- **Resting HR** has no range endpoint: it is fetched per day, capped per sync (4 on a quick sync).
+- **Laps count as reps** only when the FIT's workout has 2+ active steps — Garmin attaches a one-step workout
+  to plain runs. Text that isn't valid UTF-8 (e.g. "£" in step names) is decoded leniently.
+- **Switch-over:** a replaced Smashrun run's splits are carried over to the Garmin id until its FIT arrives,
+  never deleted.
+- **A NULL night** breaks "three in a row".
+- **The trim** takes exactly one rep off the next quality session as the check-in left it; a session with no
+  rep to spare is scaled to 0.9 instead. `recovery_trims` stores `date` (pressed, used for the episode) and
+  `start` (today, or tomorrow if today's run is in), fixed at press time — syncing never moves or undoes it. A
+  Sunday press after the run covers the next week.
+- **Sync on open** also fires before 12:00 while last night's HRV is missing; a quick sync covers 27 days of
+  wellness.
+- **The HRV band** is labelled as the normal range for the 7-day average.
