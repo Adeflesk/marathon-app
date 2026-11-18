@@ -81,6 +81,7 @@
   .profile .here { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
   .profile .planned, .profile .actual { vector-effect: non-scaling-stroke; }
   .profile .axis { position: relative; display: flex; justify-content: space-between; margin-top: 6px; }
+  .profile .axis .hidden { visibility: hidden; }
   .profile .here-label { position: absolute; top: 0; transform: translateX(-50%); color: var(--ink); white-space: nowrap; }
 
   .paces td:first-child { font-weight: 600; }
@@ -157,10 +158,10 @@
 {% include "_sync_line.html" %}
 {% if token_warning %}{% set tw = token_warning %}
 <p class="notice" role="status" style="margin-top:12px">
-  {% if tw.days >= 0 %}Your Smashrun token runs out on {{ tw.expires.strftime('%A %-d %B') }}{{ ' (today)' if tw.days == 0 else ' (in ' ~ tw.days ~ ' day' ~ ('s' if tw.days != 1) ~ ')' }}.
-  {%- else %}Your Smashrun token ran out on {{ tw.expires.strftime('%A %-d %B') }}, so syncing will fail.{% endif %}
-  Generate a new one in Smashrun's API Explorer (client id <code>client</code>), then run
-  <code>fly secrets set SMASHRUN_TOKEN=… SMASHRUN_TOKEN_ISSUED={{ today.isoformat() }}</code>.
+  {% if tw.days >= 0 %}Your Garmin key runs out on {{ tw.expires.strftime('%A %-d %B') }}{{ ' (today)' if tw.days == 0 else ' (in ' ~ tw.days ~ ' day' ~ ('s' if tw.days != 1) ~ ')' }}.
+  {%- else %}Your Garmin key ran out on {{ tw.expires.strftime('%A %-d %B') }}, so syncing will fail.{% endif %}
+  Make a new key at connect.garmin.com/app/settings/personalApiToken, then run
+  <code>fly secrets set GARMIN_API_KEY=… GARMIN_API_KEY_EXPIRES=…</code> (the day it runs out, YYYY-MM-DD).
 </p>
 {% endif %}
 {% if move_warning %}{% set mw = move_warning %}
@@ -174,6 +175,7 @@
       <input type="hidden" name="orig" value="{{ mw.orig.isoformat() }}">
       <input type="hidden" name="session" value="{{ mw.session }}">
       <input type="hidden" name="confirm" value="{{ value }}">
+      <input type="hidden" name="by" value="{{ mw.by }}">
       <button class="button{{ ' quiet' if value == 'move' }}" type="submit">{{ word }}</button>
     </form>
     {% endfor %}
@@ -182,6 +184,8 @@
 </section>
 {% endif %}
 {% if ankle_flag %}<p class="notice" style="margin-top:12px">Ankle flag until {{ ankle_flag.strftime('%A %-d %B') }}: no increases on ankle work.</p>{% endif %}
+
+{% include "_recovery.html" %}
 
 {% if morning_check %}{{ sx.morning_check(today) }}{% endif %}
 
@@ -206,7 +210,7 @@
   {% endif %}
   <div class="actions">
     <a class="button" href="/workout/{{ next_run.date.isoformat() }}.fit?n={{ next_run.fit_n }}">Download for the watch</a>
-    {% if next_run.movable %}{{ ui.move_form(next_run, "run", "button quiet") }}{% endif %}
+    {% if next_run.movable or next_run.movable_back %}{{ ui.move_form(next_run, "run", "button quiet") }}{% endif %}
   </div>
   {{ ui.moved_note(next_run, "run") }}
 </section>
@@ -256,9 +260,10 @@
   <details>
     <summary>Km splits</summary>
     <table class="splits" style="margin-top:8px">
-      <tr><th>Km</th><th class="num">Pace</th><th class="num">Heart rate</th></tr>
+      {% set cad = r.splits|selectattr('cadence')|list %}
+      <tr><th>Km</th><th class="num">Pace</th><th class="num">Heart rate</th>{% if cad %}<th class="num">Cadence</th>{% endif %}</tr>
       {% for x in r.splits %}
-      <tr><td>{{ loop.index if x.km >= 0.95 else (x.km|round(2)) }}</td><td class="num">{{ x.pace|pace }}/km</td><td class="num">{{ x.hr or '' }}</td></tr>
+      <tr><td>{{ loop.index if x.km >= 0.95 else (x.km|round(2)) }}</td><td class="num">{{ x.pace|pace }}/km</td><td class="num">{{ x.hr or '' }}</td>{% if cad %}<td class="num">{{ x.cadence|round|int if x.cadence else '' }}</td>{% endif %}</tr>
       {% endfor %}
     </table>
   </details>
@@ -297,8 +302,8 @@
         <form method="post" action="/fuel" class="inline"><input type="hidden" name="date" value="{{ w.date.isoformat() }}">
           <button type="submit" class="linkish">{{ 'Fuelled ✓ (undo)' if w.fuelled else 'Fuelled as planned' }}</button></form>
         {%- endif %}</span>{% endif %}
-      {% if w.skipped or w.moved_from or w.movable %}
-      <span class="moves">{{ ui.moved_note(w, "run") }}{% if w.movable %}{{ ui.move_form(w, "run") }}{% endif %}</span>
+      {% if w.skipped or w.moved_from or w.movable or w.movable_back %}
+      <span class="moves">{{ ui.moved_note(w, "run") }}{{ ui.move_form(w, "run") }}</span>
       {% endif %}
     </li>
     {% endfor %}
@@ -307,13 +312,13 @@
   <ul class="strength-days">
     {% for x in week.strength %}
     <li><span{{ ' class="mute"' if x.skipped }}><strong>{{ x.date.strftime('%A') }}:</strong> Strength {{ x.key }}</span>
-      {{ ui.moved_note(x, x.key) }}{% if x.movable and x.date != today %}{{ ui.move_form(x, x.key) }}{% endif %}</li>
+      {{ ui.moved_note(x, x.key) }}{{ ui.move_form(x, x.key, forward=x.date != today) }}</li>
     {% endfor %}
   </ul>
   <p class="mute" style="margin-top:4px"><a href="/strength?week={{ week.week }}">See the strength sessions</a>.</p>
   {% endif %}
   <div class="actions" style="margin-top:18px">
-    <form method="post" action="/sync"><button class="button" type="submit">Sync from Smashrun</button></form>
+    <form method="post" action="/sync"><button class="button" type="submit">Sync from Garmin</button></form>
     <a class="button quiet" href="/workouts/week/{{ week.week }}.zip">Download the week's watch files</a>
   </div>
 </section>
@@ -349,10 +354,14 @@
       <line class="here" x1="{{ x }}" x2="{{ x }}" y1="-6" y2="{{ H }}" vector-effect="non-scaling-stroke"/>
     {% endif %}
   </svg>
+  {% set here = (100 * profile.current / (n - 1)) if profile.current is not none and n > 1 else none %}
+  {% set near = 'start' if here is not none and here < 22 else 'end' if here is not none and here > 78 else none %}
   <p class="axis small mute">
-    <span>Week 1</span>
-    {% if profile.current is not none %}<span class="here-label" style="left: {{ (100 * profile.current / (n - 1))|round(1) }}%">You are here</span>{% endif %}
-    <span>Race</span>
+    {# near either end, "You are here" sits against that edge and takes the end label's place #}
+    <span{{ ' class="hidden"'|safe if near == 'start' }}>Week 1</span>
+    {% if here is not none %}<span class="here-label"
+      style="{{ 'left: 0; transform: none' if near == 'start' else 'right: 0; transform: none' if near == 'end' else 'left: ' ~ (here|round(1)) ~ '%' }}">You are here, week {{ profile.current + 1 }}</span>{% endif %}
+    <span{{ ' class="hidden"'|safe if near == 'end' }}>Race</span>
   </p>
 </section>
 
@@ -395,7 +404,7 @@
         <label for="result-time">Time (mm:ss or h:mm:ss)</label>
         <input type="text" id="result-time" name="time" inputmode="numeric" placeholder="25:30" pattern="[0-9:]+" required>
       </div>
-      <button type="submit">Save result</button>
+      <div><button class="button" type="submit">Save result</button></div>
     </form>
     {% if r %}
     <form method="post" action="/result/delete" class="inline" style="margin-top:12px">

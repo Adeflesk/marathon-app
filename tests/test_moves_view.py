@@ -293,3 +293,38 @@ def test_stale_move_after_settings_change(client, monkeypatch, tmp_path):
     _, weeks = main.build_view()
     assert not any(wo.get("moved_from") for wo in weeks[0]["workouts"])
     assert client.get("/").status_code == 200
+
+
+# --- a day earlier ---
+
+def test_move_saturday_then_sunday_earlier(client, monkeypatch):
+    on(monkeypatch, THU)
+    r = client.post("/move", data={"date": SAT.isoformat(), "session": "run", "by": "-1"}, follow_redirects=False)
+    assert r.status_code == 303 and "confirm" not in r.headers["location"]
+    r = client.post("/move", data={"date": SUN.isoformat(), "session": "run", "by": "-1"}, follow_redirects=False)
+    assert "confirm" not in r.headers["location"]  # Saturday is free now
+    _, weeks = main.build_view()
+    assert [wo["type"] for wo in workouts_on(weeks, FRI)] == ["easy"]
+    assert [wo["type"] for wo in workouts_on(weeks, SAT)] == ["long"]
+    assert workouts_on(weeks, SUN) == []
+    assert "Move a day earlier" in client.get("/").text
+
+
+def test_sunday_earlier_first_warns(client, monkeypatch):
+    on(monkeypatch, THU)
+    r = client.post("/move", data={"date": SUN.isoformat(), "session": "run", "by": "-1"}, follow_redirects=False)
+    assert "confirm=run" in r.headers["location"] and "by=-1" in r.headers["location"]
+    page = client.get(r.headers["location"])
+    assert page.context["move_warning"]["blocker_day"] == SAT
+    assert 'name="by" value="-1"' in page.text
+    client.post("/move", data={"date": SUN.isoformat(), "session": "run", "by": "-1", "confirm": "move"})
+    _, weeks = main.build_view()
+    assert len(workouts_on(weeks, SAT)) == 2
+
+
+def test_cannot_move_into_the_past(client, monkeypatch):
+    on(monkeypatch, SAT)
+    client.post("/move", data={"date": SAT.isoformat(), "session": "run", "by": "-1"})
+    _, weeks = main.build_view()
+    assert workouts_on(weeks, SAT)[0].get("moved_from") is None
+    assert workouts_on(weeks, SAT)[0]["movable_back"] is False

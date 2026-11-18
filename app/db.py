@@ -1,37 +1,61 @@
 import json
 import os
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
 DB_PATH = os.environ.get("DB_PATH", str(Path(__file__).resolve().parent.parent / "data" / "marathon.db"))
 
 
-def conn() -> sqlite3.Connection:
+@contextmanager
+def conn() -> Iterator[sqlite3.Connection]:
+    """A connection that commits on success, rolls back on error, and is always closed.
+
+    (`with sqlite3.connect()` alone commits but leaves the connection open.)
+    """
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB_PATH)
     c.row_factory = sqlite3.Row
-    return c
+    try:
+        with c:
+            yield c
+    finally:
+        c.close()
 
 
-def backup_bytes() -> bytes:
-    """A consistent snapshot of the whole database, as the bytes of a SQLite file."""
+SECRET_META = ("garmin_token", "garmin_token_exp")  # left out of a backup
+
+
+def backup_file() -> str:
+    """A consistent snapshot of the whole database in a temp SQLite file (the caller removes it), without the
+    cached Garmin access token. Vacuumed, so the deleted rows don't linger in free pages."""
     import tempfile
 
-    with tempfile.TemporaryDirectory() as d:
-        target = Path(d) / "backup.db"
+    fd, target = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
         src = sqlite3.connect(DB_PATH)
         dst = sqlite3.connect(target)
         try:
             src.backup(dst)
+            dst.execute(f"DELETE FROM meta WHERE key IN ({','.join('?' * len(SECRET_META))})", SECRET_META)
+            dst.commit()
+            dst.execute("VACUUM")
         finally:
             dst.close()
             src.close()
-        return target.read_bytes()
+    except BaseException:
+        os.remove(target)
+        raise
+    return target
 
 
 def init() -> None:
     with conn() as c:
+        # WAL lets a page read while a sync writes; the setting stays with the database file
+        c.execute("PRAGMA journal_mode=WAL")
         c.executescript(
             """
             CREATE TABLE IF NOT EXISTS activities (
@@ -46,6 +70,22 @@ def init() -> None:
                 id INTEGER PRIMARY KEY,
                 splits TEXT NOT NULL,
                 laps TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS run_files (
+                id INTEGER PRIMARY KEY,
+                fit BLOB NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS run_source (
+                id INTEGER PRIMARY KEY,
+                source TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS run_steps (
+                id INTEGER PRIMARY KEY,
+                steps INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS steps (
+                date TEXT PRIMARY KEY,
+                total INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS checkins (
                 week INTEGER PRIMARY KEY,
@@ -103,6 +143,12 @@ def init() -> None:
                 key TEXT PRIMARY KEY,
                 value TEXT
             );
+            CREATE TABLE IF NOT EXISTS wellness (
+                date TEXT PRIMARY KEY,
+                hrv_night REAL, hrv_week_avg REAL, hrv_low REAL, hrv_high REAL,
+                rhr INTEGER, sleep_s INTEGER, sleep_score INTEGER, stress_avg INTEGER, weight_kg REAL,
+                raw TEXT
+            );
             CREATE TABLE IF NOT EXISTS moves (
                 date TEXT NOT NULL,
                 session TEXT NOT NULL,
@@ -110,12 +156,60 @@ def init() -> None:
                 created TEXT,
                 PRIMARY KEY (date, session)
             );
+            CREATE TABLE IF NOT EXISTS recovery_trims (
+                date TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                start TEXT NOT NULL,
+                created TEXT,
+                PRIMARY KEY (date, kind)
+            );
             """
         )
 
 
+def actual_by_date() -> dict[str, dict]:
+    """Synced runs summed by ISO date: {"km", "seconds", "hr": [avg HRs], "main": the day's longest run}."""
+    out: dict[str, dict] = {}
+    with conn() as c:
+        for r in c.execute("SELECT id, date, km, seconds, avg_hr FROM activities"):
+            d = out.setdefault(r["date"], {"km": 0.0, "seconds": 0, "hr": [], "main": None})
+            d["km"] += r["km"]
+            d["seconds"] += r["seconds"]
+            if r["avg_hr"]:
+                d["hr"].append(r["avg_hr"])
+            if d["main"] is None or r["km"] > d["main"]["km"]:  # the day's longest run gets the review
+                d["main"] = {"id": r["id"], "km": r["km"], "seconds": r["seconds"]}
+    return out
+
+
+def steps() -> list[dict]:
+    """Garmin's daily step totals, oldest first: {"date", "total", "run"}. `run` is the steps of that day's runs
+    (0 with none), worked out on every read so a run added or replaced later counts; None when one of the day's
+    runs has no step count yet."""
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT s.date, s.total, CASE WHEN COUNT(a.id) > COUNT(rs.id) THEN NULL "
+            "ELSE COALESCE(SUM(rs.steps), 0) END AS run "
+            "FROM steps s LEFT JOIN activities a ON a.date = s.date LEFT JOIN run_steps rs ON rs.id = a.id "
+            "GROUP BY s.date ORDER BY s.date")]
+
+
+def wellness() -> list[dict]:
+    """Daily wellness rows (HRV, resting HR, sleep, stress, weight), oldest first, without `raw`. NULL = missing."""
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT date, hrv_night, hrv_week_avg, hrv_low, hrv_high, rhr, sleep_s, sleep_score, stress_avg, "
+            "weight_kg FROM wellness ORDER BY date")]
+
+
+def checkins() -> dict[int, dict]:
+    """Weekly check-ins by week number."""
+    with conn() as c:
+        return {r["week"]: dict(r) for r in c.execute("SELECT * FROM checkins")}
+
+
 def run_details(ids: list[int]) -> dict[int, dict]:
-    """Stored Smashrun km splits and laps by activity id: {id: {"splits": [...], "laps": [...]}}."""
+    """Stored km splits and laps by activity id: {id: {"splits": [...], "laps": [...]}}."""
     if not ids:
         return {}
     with conn() as c:
@@ -245,3 +339,17 @@ def toggle_fuel(day: str) -> None:
 def fuel_days() -> set[str]:
     with conn() as c:
         return {r["date"] for r in c.execute("SELECT date FROM fuel_logs")}
+
+
+def add_trim(day: str, kind: str, start: str) -> None:
+    """The user took the recovery advice on `day`: kind "trim" (`start` to Sunday at 0.9) or "easy" (the next run
+    from `start` easy). `start` is fixed here, so a run syncing later never moves the choice on."""
+    with conn() as c:
+        c.execute("INSERT OR IGNORE INTO recovery_trims (date, kind, start, created) VALUES (?,?,?,?)",
+                  (day, kind, start, datetime.now().isoformat(timespec="seconds")))
+
+
+def trims() -> list[dict]:
+    """Recovery choices taken, oldest first: [{"date", "kind", "start"}]."""
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT date, kind, start FROM recovery_trims ORDER BY date, kind")]

@@ -1,6 +1,6 @@
 """Post-run review: what a synced run says about the planned session.
 
-Inputs are the planned workout, the run summary ({"km", "seconds"}) and Smashrun's detail
+Inputs are the planned workout, the run summary ({"km", "seconds"}) and the run's detail
 ({"splits": km splits, "laps": laps}), where splits and laps carry cumulative distance and time.
 Paces are seconds per km. Nothing here is stored; reviews are recomputed like the plan.
 """
@@ -10,15 +10,20 @@ from .pace_engine import fmt_pace
 from .sessions import flatten, pace_s
 
 ON_PACE_S = 10  # a rep within 10 s/km of target counts as on pace (the watch's hard band)
+FORM_MIN_KM = 8  # a form note needs this many full km with cadence: shorter runs don't tire the stride
+CADENCE_DROP = 4  # steps/min down, early part against the last third (~2.5% at 170-180; above split noise)
+STRIDE_UP = 0.05  # step length up by 5% or more, at a pace no quicker, also counts as form fading
+MIN_SPLIT_KM = 0.05  # a last split shorter than 50 m is noise (the watch stopping), not a split
 
 
 def splits(raw: list[dict]) -> list[dict]:
-    """Smashrun km splits (cumulative) as [{km, pace, hr}] per split."""
+    """Stored km splits (cumulative) as [{km, pace, hr}] per split."""
     out, dist, secs = [], 0.0, 0.0
     for s in raw:
         d, t = s["distance"] - dist, s["seconds"] - secs
-        if d > 0:
-            out.append({"km": d, "pace": t / d, "hr": s.get("heartRate")})
+        if d >= MIN_SPLIT_KM:
+            out.append({"km": d, "pace": t / d, "hr": s.get("heartRate"), "cadence": s.get("cadence"),
+                        "stride": s.get("stepLength"), "contact": s.get("contact")})
         dist, secs = s["distance"], s["seconds"]
     return out
 
@@ -41,6 +46,33 @@ def drift(sp: list[dict]) -> float | None:
     return round((cost(full[half:]) / cost(full[:half]) - 1) * 100, 1)
 
 
+def _mean(part: list[dict], key: str) -> float:
+    km = sum(s["km"] for s in part)
+    return sum(s[key] * s["km"] for s in part) / km
+
+
+def form_note(workout: dict, sp: list[dict]) -> str:
+    """Whether form faded late in an easy or long run: cadence down, else stride longer at a pace no quicker.
+    The early part (km 2 to the end of the first third) against the last third; on a long run with an MP finish,
+    of the steady running before it. Empty when there's nothing to say or too little to judge."""
+    mp_km = workout.get("mp_km") or 0
+    part = sp[:-math.ceil(mp_km)] if mp_km else sp
+    full = [s for s in part if s["km"] >= 0.9 and s.get("cadence")]
+    if len(full) < FORM_MIN_KM or len(full) != len([s for s in part if s["km"] >= 0.9]):
+        return ""
+    third = len(full) // 3
+    early, last = full[1:third], full[-third:]
+    km = round(sum(s["km"] for s in last))
+    a, b = _mean(early, "cadence"), _mean(last, "cadence")
+    if a - b >= CADENCE_DROP:
+        return f"Cadence fell from {round(a)} to {round(b)} steps/min in the last {km} km."
+    if all(s.get("stride") for s in early + last):
+        a, b = _mean(early, "stride"), _mean(last, "stride")
+        if b >= a * (1 + STRIDE_UP) and _mean(last, "pace") >= _mean(early, "pace"):
+            return f"Your stride lengthened in the last {km} km ({a:.2f} → {b:.2f} m)."
+    return ""
+
+
 def _drift_words(d: float | None) -> str:
     if d is None:
         return ""
@@ -50,7 +82,7 @@ def _drift_words(d: float | None) -> str:
 
 
 def _laps(laps: list[dict]) -> list[dict]:
-    """Smashrun laps (cumulative) as [{type, km, seconds}] per lap."""
+    """Stored laps (cumulative) as [{type, km, seconds}] per lap."""
     out, dist, dur = [], 0.0, 0.0
     for lap in laps:
         d, t = lap["endDistance"] - dist, lap["endDuration"] - dur
@@ -124,6 +156,7 @@ def review(workout: dict, run: dict, detail: dict, paces: dict) -> dict:
         out["verdict"] = "good" if on == len(reps) else ("warn" if on * 2 >= len(reps) else "bad")
         return out
 
+    out["note"] = form_note(workout, sp)
     mp_km = workout.get("mp_km") or 0
     if workout["type"] == "long" and mp_km and sp:
         tail = sp[-math.ceil(mp_km):]
@@ -142,6 +175,15 @@ def review(workout: dict, run: dict, detail: dict, paces: dict) -> dict:
         return out
 
     if avg is None:
+        return out
+    if workout["type"] == "long":
+        if avg < paces["marathon"] + 20:
+            out["headline"] = f"Long run at {fmt_pace(avg)}/km is quicker than long-run pace. Keep it steady."
+            out["verdict"] = "warn"
+        else:
+            out["headline"] = (f"Long run at {fmt_pace(avg)}/km (planned {fmt_pace(paces['long'])})"
+                               + (f", {words}." if words else "."))
+            out["verdict"] = "good" if (d is None or d < 10) else "warn"
         return out
     if avg < paces["marathon"] + 20:
         out["headline"] = f"{fmt_pace(avg)}/km is quicker than easy. Keep easy days easy."

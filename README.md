@@ -1,7 +1,7 @@
 # Marathon plan app
 
 FastAPI + server-rendered pages + SQLite. Plans a build to the Barcelona Marathon (Sun 14 Mar 2027),
-syncs runs from Smashrun and compares them with the plan.
+syncs runs and recovery data from Garmin and compares them with the plan.
 
 ## Run it in VS Code
 
@@ -11,7 +11,7 @@ syncs runs from Smashrun and compares them with the plan.
    python -m venv .venv
    source .venv/bin/activate        # Windows: .venv\Scripts\activate
    pip install -r requirements.txt
-   cp .env.example .env             # then paste your Smashrun token into .env
+   cp .env.example .env             # then paste your Garmin key into .env
    uvicorn app.main:app --reload
    ```
    Or press F5 (the launch config is in `.vscode/launch.json`).
@@ -22,17 +22,39 @@ syncs runs from Smashrun and compares them with the plan.
 In Chrome on Android, open the app, then the ⋮ menu → **Add to home screen** (or **Install app**). It opens
 full screen with its own icon. If you had a plain shortcut before, remove it and add the app this way.
 
-## Smashrun token
+## Garmin key
 
-Open https://api.smashrun.com/v1/explorer, type `client` in the box at the top, click Connect and copy
-the token. Put it in `.env` as `SMASHRUN_TOKEN=...` (on Fly: `fly secrets set SMASHRUN_TOKEN=...`).
-It lasts about 60 days. Also set `SMASHRUN_TOKEN_ISSUED` to the day you generated it (`YYYY-MM-DD`), and
-This week warns you in the last 7 days before it runs out. When sync says the token was rejected, get a new
-one the same way and update both.
+Open https://connect.garmin.com/app/settings/personalApiToken, create a key and choose **1 year**. It is
+shown once, so copy it straight away. Put it in `.env` as `GARMIN_API_KEY=...` and set
+`GARMIN_API_KEY_EXPIRES` to the day it runs out (`YYYY-MM-DD`). On Fly:
+`fly secrets set GARMIN_API_KEY=... GARMIN_API_KEY_EXPIRES=YYYY-MM-DD`. This week warns you in the last 7
+days before it runs out. When sync says the key was rejected, make a new one the same way and update both.
+
+Runs, their km splits and laps, and your nightly HRV, resting heart rate and sleep all come from Garmin
+Connect. Runs you had synced from Smashrun before stay; a Garmin run replaces the matching old one.
+
+## Recovery
+
+The Recovery panel on This week and the charts on Progress read your HRV against your normal range (the band
+Garmin shows, for your 7-day average). The app only suggests; it never changes the plan by itself, and race
+week is never trimmed.
+
+- **Suspicion:** three nights in a row with HRV below your range, or a 7-day average below it. Nothing
+  changes yet. Resting heart rate and short or poor sleep are shown as extra weight, but never start it.
+- **The next run decides.** If that run shows a higher heart rate at easy pace or more drift than your
+  recent runs, or it's a hard session that fell short of its reps, the suspicion turns into advice; if it
+  looks normal, the note stays a note.
+- **Take the trim:** the rest of that week at 90%, one rep off the next session (or the whole session at 90%
+  when it has no rep to spare), and strength held at its current loads. You choose; nothing happens until you
+  press it. It starts today, or tomorrow if today's run is already in; pressed on a Sunday after the run, it
+  covers the next week. Once pressed, it stays put: syncing runs never moves or undoes it.
+- **Make the next run easy:** if HRV is still low three nights after the advice (or two more runs in), the
+  warning turns firm and this second button appears: your next run becomes an easy run at 80% of its km.
+- It clears when HRV is back in range two nights running and the 7-day average is no longer low.
 
 ## After a run
 
-Open This week or Progress once the run is in Smashrun: when a run planned for yesterday or today hasn't
+Open This week or Progress once the run is in Garmin Connect: when a run planned for yesterday or today hasn't
 synced yet, the app syncs first (at most every 15 minutes). If the run still isn't there, a line at the top
 says so with a **Sync now** button; the button at the bottom of the week works too. Each new run's km splits and laps come with it, and This week
 shows a review of your last run: easy runs quicker than easy get flagged, long runs show whether the
@@ -40,6 +62,13 @@ marathon-pace finish was on pace, and sessions run from the watch workout are ch
 Strides are listed one by one but not judged, since they go by feel; the review checks that the running
 around them stayed easy. Heart-rate drift (second half against first) under 5% means the effort stayed
 steady. Strides days show no drift figure, because the strides lift your heart rate on purpose.
+A long run without a marathon-pace finish reads "Long run at 6:13/km (planned 6:30)".
+
+**Form note.** On easy and long runs of 8 km or more, the review says when your form faded: "Cadence fell from
+176 to 170 steps/min in the last 4 km", or "Your stride lengthened in the last 4 km" (at a pace no quicker). As
+you tire the stride gets longer and loads the ankle more, so it's worth noticing on the long runs. It's
+information only: it never changes the verdict or the plan. On a long run with a marathon-pace finish, only the
+steady running before the finish is compared. The km splits show cadence too.
 
 ## Progress
 
@@ -55,7 +84,15 @@ your goal, and marathon pace, the sessions and the watch files follow; **Back to
 back exactly. The app never changes the goal by itself.
 
 Below: charts of fitness, long runs and km planned against done, the ankle tests against their targets, and
-a summary of every finished week with one focus for the next. Last week's summary also shows on This week
+a summary of every finished week with one focus for the next. The Ankle section also shows:
+
+- **Cadence** at easy pace (same pace every week, so a quicker or slower run doesn't move it), with a reading
+  over the last 4 weeks: steady, rising or falling.
+- **Time on your feet:** Garmin's daily steps with your runs taken out, over 8 weeks, a dot on each day your
+  ankle was worse (a "worse than usual" morning check or ankle pain logged). A heavy day is one in your own top
+  fifth of the previous 4 weeks, since long days on your feet are normal for you. One heavy day gets no
+  message. Only when it repeats (twice in 4 weeks, a worse ankle the day after a heavy day, at least 3 days
+  apart) does it say so. It shows what happened after what, never that the steps caused it. Last week's summary also shows on This week
 on Monday and Tuesday. A week no sync has covered says so, since runs may be missing.
 
 ## Fuelling and race day
@@ -149,9 +186,10 @@ To try numbers without saving them: `python -m app.pace_engine 10 52:30`.
 
 Life gets in the way. Any run or strength session from today on has a **Move to tomorrow** button: on
 today's card, and in the week list. The session moves one day, and its watch file, logging and run review move
-with it. Tap it again to push it another day.
+with it. Tap it again to push it another day. Sessions from tomorrow on also have **Move a day earlier**, for
+when you'll be away at the end of the week: move Saturday's run to Friday first, then Sunday's to Saturday.
 
-If tomorrow already has a long run or a speed session, or you're moving a run onto another run day, or a
+If the new day already has a long run or a speed session, or you're moving a run onto another run day, or a
 strength session onto the other strength day, the app warns you and suggests skipping the missed session
 instead of stacking the two. **Skip it** marks it skipped: it comes off the week's planned km and doesn't count
 as missed. **Move anyway** moves it regardless. Moved and skipped sessions show **Undo**. A session you've
@@ -208,7 +246,7 @@ The shape follows what coaches and the research agree on. The full write-up is i
 - **Missed running:** a week can't be more than 15% above the best of your last four weeks actually run. If a
   week fell under 60% of its target (ill, travelling), the next one is held at 90% of that best week, then
   climbs back to the plan over two or three weeks. Never below 25 km, never on race week. It only counts
-  weeks a Smashrun sync has covered (a sync on or after the Sunday), so a sync gap can't shrink the plan. The
+  weeks a sync has covered (a sync on or after the Sunday), so a sync gap can't shrink the plan. The
   week says when it's been held; strength isn't trimmed by it. Following the plan, it never kicks in.
 
 This is a draft shape, not coaching. Stop if the ankle hurts, and see a physio if it keeps happening.

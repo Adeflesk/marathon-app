@@ -67,3 +67,20 @@ def test_back_follows_a_later_settings_goal(client, monkeypatch, tmp_path):
     monkeypatch.setattr(config, "SETTINGS_PATH", f)
     s, _ = main.build_view()
     assert s["goal_time"] == "4:00:00" and s["paces"]["marathon"] == 341  # the settings' pace, untouched
+
+
+def test_a_quick_goal_never_puts_marathon_pace_at_threshold(client):
+    _goal(client, "3:20:00")  # 284 s/km, quicker than the settings' threshold of 325
+    s, _ = main.build_view()
+    assert s["paces"]["marathon"] == 335  # threshold + 10
+    assert s["paces"]["subthreshold"] == 326 >= s["paces"]["tempo"]
+
+
+def test_form_posts_from_another_site_are_refused(client):
+    r = client.post("/goal", data={"goal": "4:09:00"}, headers={"origin": "https://evil.example"},
+                    follow_redirects=False)
+    assert r.status_code == 403
+    assert db.goals() == []
+    ok = client.post("/goal", data={"goal": "4:09:00"}, headers={"origin": "http://testserver"},
+                     follow_redirects=False)
+    assert ok.status_code == 303

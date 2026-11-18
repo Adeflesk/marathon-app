@@ -65,3 +65,27 @@ def test_progress_renders_every_day(client, monkeypatch):
         on(monkeypatch, day)
         assert client.get("/progress").status_code == 200, day
         day += timedelta(days=3)
+
+
+def test_cadence_chart(client, monkeypatch):
+    on(monkeypatch, date(2026, 11, 14))
+    assert "Cadence at easy pace" not in client.get("/progress").text
+    trend = [{"week": i, "cadence": 170 + i, "stride": 1.0, "n": 5} for i in range(1, 9)]
+    monkeypatch.setattr(main.progress, "cadence_trend", lambda weeks, ref: trend)
+    page = client.get("/progress").text
+    assert 'aria-label="Cadence at easy pace' in page and "rising over the last 4 weeks" in page
+
+
+def test_steps_pattern_note(client, monkeypatch):
+    on(monkeypatch, date(2026, 11, 14))
+    assert "heavy day on your feet" not in client.get("/progress").text
+    days = [{"date": date(2026, 11, 14) - timedelta(days=i), "on_feet": 15000, "heavy": False, "trouble": i == 3}
+            for i in range(56)][::-1]
+    view = {"days": days, "pattern": [date(2026, 11, 2), date(2026, 11, 10)]}
+    monkeypatch.setattr(main.progress, "steps_view", lambda *a: view)
+    page = client.get("/progress").text
+    assert "Twice in the last 4 weeks your ankle was worse the day after a heavy day on your feet" in page
+    assert "Mon 2 Nov" in page and "Tue 10 Nov" in page
+    assert 'aria-label="On-feet steps' in page
+    view["pattern"].append(date(2026, 11, 13))
+    assert "3 times in the last 4 weeks" in client.get("/progress").text

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A single-user marathon training app (FastAPI + Jinja2 server-rendered pages + SQLite). It generates a
-week-by-week plan to a target race (default: Barcelona Marathon, 14 Mar 2027), syncs runs from Smashrun,
+week-by-week plan to a target race (default: Barcelona Marathon, 14 Mar 2027), syncs runs and recovery data from Garmin,
 compares them with the plan, builds strength sessions from the user's equipment, and exports Garmin `.fit`
 workouts. `README.md` is written for the end user and explains the training logic in plain terms.
 
@@ -14,17 +14,18 @@ workouts. `README.md` is written for the end user and explains the training logi
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env                       # set SMASHRUN_TOKEN for sync
+cp .env.example .env                       # set GARMIN_API_KEY (+ GARMIN_API_KEY_EXPIRES) for sync
 uvicorn app.main:app --reload              # http://localhost:8000 (F5 in VS Code does the same)
 python -m app.pace_engine 10 52:30         # training paces from a 10 km in 52:30
+python -m app.garmin_api probe [days]      # saves raw Garmin API responses to samples/garmin-api/ (untracked)
 ```
 
 Deployed to Fly.io (`fly.toml`, `Dockerfile`): `fly deploy`. SQLite and `equipment.json` live on the
 `marathon_data` volume at `/data` (via `DB_PATH`). Setting the `APP_PASSWORD` secret turns on HTTP Basic auth
-(middleware in `main.py`); leave it unset locally. `TZ=Europe/Dublin` so `date.today()` matches the user.
+(middleware in `main.py`); leave it unset locally. A second middleware refuses POSTs whose `Origin` is another site. `TZ=Europe/Dublin` so `date.today()` matches the user.
 
 Tests: `pip install -r requirements-dev.txt && pytest` (tests use defaults only and a temp DB, and never reach
-Smashrun: `tests/conftest.py` clears `SMASHRUN_TOKEN` and blocks its HTTP client). There's no linter or build step. To check plan output quickly without the server:
+Garmin: `tests/conftest.py` clears `GARMIN_API_KEY` and blocks its HTTP client). There's no linter or build step. To check plan output quickly without the server:
 
 ```bash
 python -c "from datetime import date; from app.config import load_settings; from app.plan import generate; [print(w['week'], w['phase'], w['target_km']) for w in generate(load_settings(), date.today())]"
@@ -82,19 +83,38 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   - Manages `flag_until`: raises 7-day ankle flag on morning check "worse than usual", ankle pain ≥ 3 on ankle items, or weekly check-in pain ≥ 3.
   - Identifies when morning check is due and when readiness tests are due.
 - `app/moves.py` — pure: applies the user's moved/skipped sessions to the generated plan. `shift()` marks an
-  item (`orig_date`, then `moved_from` + new `date`, or `skipped`); `relocate()` puts items moved past Sunday
-  into the next week; `clash()` holds the warning rules; `can_move()` stops at race day and the plan's end.
-- `app/main.py` — `build_view()` is the hub every page uses (This week and Progress go through `view_with_sync()`,
-  which syncs first when a run from yesterday or today is missing and neither `last_sync` nor `last_sync_try`
-  in `meta` is under 15 minutes old; only with `SMASHRUN_TOKEN`): `apply_goal()` (the latest `goals` row overrides
-  `goal_time` and marathon pace; the settings goal again restores exact settings paces) → `apply_result()` (the latest logged result
-  sets `s["paces"]` and `s["result"]` via `pace_engine.from_result`) → generate plan → scale each week by the
-  smaller of the *previous* week's check-in factor and the missed-week guard (`volume_guard()`; known weeks
-  are over and covered by `meta.last_sync`, marked `w["synced"]`; strength follows the check-in only) → shift and relocate moved runs → join actual runs from SQLite by date (a day with two runs
-  shares its actual; the longer run gets the review) → compute ankle context and attach strength sessions
-  (shifted before logs are looked up), suggestions, and snacks → relocate strength → mark `movable`.
+  item (`orig_date`, then `moved_from` + new `date`, or `skipped`); `relocate()` puts items moved out of their week
+  (past Sunday or before Monday) into the week holding their new date; `clash()` holds the warning rules and
+  `can_move()` stops at race day and the plan's ends, both taking `by` (1 = tomorrow, -1 = a day earlier, never
+  into the past). Items carry `movable` and `movable_back`; `/move` takes `by`.
+- `app/view.py` — builds every page's view; a functional core with one read at the edge.
+  - `load_facts()` is the only storage read: every table, `settings.json` and the equipment, as a frozen `Facts`.
+  - `build_view(facts, today)` is pure (it deep-copies the settings; tested without a database in
+    `tests/test_view_pure.py`). Its pipeline: `apply_goal()` (the latest `goals` row overrides `goal_time` and
+    marathon pace, never within `MP_GAP` of threshold; the settings goal again restores exact settings paces) →
+    `apply_result()` (the latest result sets `s["paces"]` and `s["result"]` via `pace_engine.from_result`) →
+    generate → `ankle_state()` → `scale_and_shift_runs()` (each week by the smaller of the *previous* week's
+    check-in factor and the missed-week guard, `volume_guard()`: known weeks are over and covered by
+    `last_sync`, marked `w["synced"]`; fuel notes; moves, then relocate) → `join_actuals()` (actual runs by date;
+    a day with two runs shares its actual, the longer run gets the review; then `attach_strength()`, shifted
+    before logs are looked up, with suggestions and snacks; then relocate strength) → `mark_done_and_movable()`.
+  - Recovery: `Facts` also holds `wellness` and `trims`. `scale_and_shift_runs()` applies trims (the rest of the week at
+    0.9 and a rep off the next session, or the next run easy at 0.8; never race week) from the trim's stored `start`
+    (today, or tomorrow when today's run had synced when it was pressed), so the trimmed runs and the easy run stay
+    fixed once they sync; a session with no rep to drop is scaled at min(factor, 0.9) instead,
+    `recovery_state()` puts `recovery.state()` on each week, and strength follows a trim (loads held).
+  - Also the questions pages ask of a built view: `missing_runs()`, `session_at()`, `move_warning()`.
+  - Page data from a built view, pure too: `dashboard()` is everything This week shows (`next_run()`, `last_run()`,
+    `ankle_tests()`, `last_summary()`, `profile()`, the token warning); its route only adds the message and sync line.
+- `app/main.py` — the shell: routes, the auth and same-origin middlewares, Jinja filters, and `build_view()`,
+  which is `view.build_view(view.load_facts(), today())` (tests patch `main.today`). This week and Progress go
+  through `view_with_sync()`, which syncs first when a run from yesterday or today is missing, or before 12:00
+  (`main.now()`) when today's wellness row or its `hrv_night` is missing, and neither
+  `last_sync` nor `last_sync_try` in `meta` is under 15 minutes old (only with `GARMIN_API_KEY`; a quick sync,
+  `garmin_sync.QUICK`: details for the newest 4 runs, wellness range endpoints from 27 days back (one call each; steps in 14-day chunks, so two),
+  4 resting-HR days, 8 s timeout, while Sync fetches the rest).
   Routes: `/`, `/plan`, `/progress`, `/race`, `/goal` (POST), `/fuel` (POST, toggles the tick on a done long run with a note), `/strength`, `/equipment` (GET/POST), `/workout/{date}.fit?n=`,
-  `/workouts/week/{n}.zip`, `/sync`, `/checkin`, `/strength/log` (POST), `/snack` (POST), `/ankle/check` (POST),
+  `/workouts/week/{n}.zip`, `/sync`, `/recovery` (POST: takes the offered `trim` or `easy`, never in race week), `/checkin`, `/strength/log` (POST), `/snack` (POST), `/ankle/check` (POST),
   `/ankle/tests` (POST), `/result` and `/result/delete` (POST), `/manifest.webmanifest` and the icons (from
   `app/static/`, outside the password so Android can install the app), `/move` (POST; warns via `/?confirm=…` on a clash), `/move/undo` (POST).
   POSTs redirect with a 303 to their anchor.
@@ -106,7 +126,10 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   `verdict` (from `s["result"]`), `goal_options` (stretch = prediction × (1 − min(4%, 1% per 4 weeks left)),
   prediction, way back), `why_rows`, `ankle_table`, `summaries` (completed weeks; "Next week" = first rule
   that applies: ankle trigger, next week held, easy too quick, long-run drift, snacks < 4, strength missed,
-  test week).
+  test week), `cadence_trend`/`cadence_reading` (same split selection as `fitness_trend`; last 4 weeks' median
+  against the 4 before, ±3 steady), `steps_view(steps, checks, logs, t)` (on-feet = total − run steps; heavy =
+  above the 80th percentile of the previous 28 days, ≥ 14 of them; `pattern` only with 2+ heavy days in 28 followed
+  next day by `ankle.trouble_dates()`, episodes ≥ 3 days apart).
 - `app/fuel.py` — pure: `gel_minutes` (45, then every 35, none in the last 10; runs ≥ 90 min only),
   `long_run_note(km, mp_km, long_pace)`, `race_plan(mp, stations, gel_stations)` (first 5 km MP + 5, the rest
   quicker so the finish is MP × 42.195; gels before the first gel station carried, later ones at the last gel
@@ -116,21 +139,45 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   to the block's first step index, mirroring Garmin Connect's own files (samples in `samples/garmin/`,
   untracked). Single-step and tempo files are confirmed on the user's watch. Easy and long runs open with a `WARMUP_KM` (1 km) open-target warm-up
   step inside their planned km; race day doesn't.
-- `app/smashrun.py` — paged `GET /v1/my/activities/search`, upserts into `activities`, then fetches laps
-  (`/my/activities/{id}`) and km splits (`/splits/km`) once per new run into `run_details` (max 40 runs
-  per sync). Checked against the user's account. The token is a personal API Explorer token (client id
-  `client`, ~60 days, 250 requests/hour); errors surface as `SyncError` messages on the dashboard. `SMASHRUN_TOKEN_ISSUED` (YYYY-MM-DD) gives
-  `token_expiry()` (+60 days); the dashboard warns from 7 days before.
+- `app/garmin_api.py` — Garmin Personal API client. `GARMIN_API_KEY` is exchanged for an access token (~24 h, no
+  refresh token) cached in `meta` and re-fetched when under an hour is left; one retry on a 401; failures are
+  `SyncError` messages on the dashboard. `GARMIN_API_KEY_EXPIRES` (YYYY-MM-DD) gives `key_expiry()`; the
+  dashboard warns from 7 days before. The `probe` CLI saves raw responses for field checking.
+- `app/fitfile.py` — pure: an activity FIT ZIP (`details`) or bare FIT (`details_from_fit`) to the cumulative km
+  splits and laps `review.py` reads; splits also carry `cadence` (steps/min = 2 × (cadence + fractional)),
+  `stepLength` (m) and `contact` (ms), None when the file has none. Laps are
+  typed `work` only when the file holds a workout with 2+ active steps; lenient on bad UTF-8. Streams record by
+  record, keeping only (time, distance, HR), laps and workout steps, so a 10 km file adds ~7 MB (the Fly VM has
+  256 MB). Uses fit-tool's private `_project_raw` and `WireDecoder._looks_like_header` (version pinned in
+  requirements).
+- `app/garmin_sync.py` — `sync_runs()` pages the activity search, upserts `activities`, then fetches the FIT ZIP
+  once per new run into `run_files`/`run_details` (`run_source` marks Garmin rows); `sync_wellness()` fills
+  `wellness` (HRV, resting HR, sleep, stress, weight); `sync()` does both. A Garmin run replaces the matching
+  older row (same date, km within 3% or 0.2 km), taking over its `run_details` until its own FIT arrives (FIT is
+  fetched for runs with no `run_files` row). A FIT that fails is retried next sync, logged and counted in `meta`
+  `garmin_fit_failures`. `run_steps` gets each run's `steps` from the search; `_steps()` fills `steps` (daily
+  totals, 14-day chunks) during `sync_wellness`; full Sync re-derives up to `BACKFILL_PER_SYNC` (4) older runs'
+  details from `run_files` when their splits lack `cadence` (`QUICK` sets `backfill` 0). An `activities` row with no `run_source` entry came from Smashrun, the previous source
+  (removed).
+- `app/recovery.py` — pure HRV episode state, recomputed per request. Starts on 3 nights below the HRV band or a
+  low 7-day average; the next judged run (HR at easy pace, drift) confirms it (advice) or not (note); firm after
+  3 more nights or 2 more runs; clears on 2 nights in band. `offer` says which button (`trim`, then `easy`) the
+  page may show; only a stored choice changes the plan. Resting HR and sleep are support, never a start.
 - `app/review.py` — pure post-run review, recomputed per request like the plan: per-km pace and HR from
   splits, heart-rate drift (second half against first, first km excluded), easy runs quicker than MP + 20 s
   flagged, the long run's MP finish checked from its last splits, and structured sessions checked rep by
-  rep from Garmin `work` laps (within 10 s/km is on pace). Strides days list each stride without judging it, skip drift, and
+  rep from Garmin `work` laps (within 10 s/km is on pace). A long run without an MP finish reads "Long run at
+  {pace} (planned {long})". `splits()` drops splits under `MIN_SPLIT_KM` (50 m) and carries `cadence`, `stride`,
+  `contact`; `form_note()` (easy and long runs, ≥ 8 full km with cadence; the part before an MP finish) notes
+  cadence down ≥ 4 steps/min or stride up ≥ 5% at a pace no quicker, early part against the last third. Never
+  changes the verdict. Strides days list each stride without judging it, skip drift, and
   warn (never "bad") only when the easy running around them is too quick. `build_view` attaches `review` to each planned
   workout whose day has a synced run with details (the day's longest run).
 - `app/db.py` — tables: `activities` (synced runs), `run_details` (JSON km splits and laps per run),
   `checkins` (keyed by week number), `strength_logs` (logged sets, weight, reps, rating, ankle pain),
   `snack_logs` (daily ankle snack ticks), `ankle_tests` (readiness test values), `ankle_checks` (morning ankle checks),
-  `moves` (a session's original date + `run`/`A`/`B` → new date, or NULL when skipped), `results` (races and
+  `moves` (a session's original date + `run`/`A`/`B` → new date, or NULL when skipped), `wellness` (daily HRV, resting HR, sleep, stress, weight), `recovery_trims` (recovery choices: date pressed + `trim`/`easy` + `start`, the first day it applies), `run_files` (original FIT per Garmin run), `run_source` (which activities came from Garmin), `steps` (Garmin daily step totals), `run_steps` (each Garmin run's steps; `db.steps()` subtracts them per day at
+  read time, `run` None when a run has none), `results` (races and
   time trials: date, km, seconds), `goals` (goal changes: date, goal_time or "settings"; the latest wins), `fuel_logs` (date of a long run fuelled as planned) and `meta` (key/value; `last_sync` is written by a successful sync,
   `last_sync_try` by each sync on open).
   Schema is `CREATE IF NOT EXISTS` on startup; there are no migrations. `DB_PATH` env var overrides `data/marathon.db`.

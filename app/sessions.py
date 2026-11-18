@@ -6,7 +6,6 @@ for an open target (recoveries). Sessions follow the plan's block, counted back 
 general (fartlek), threshold (cruise intervals), strength (just under MP-10 s reps) and specific
 (long reps at MP), with a smaller version in cutback weeks and a short MP touch in the taper.
 """
-import math
 
 from .pace_engine import fmt_pace
 from .plan import _half
@@ -209,3 +208,15 @@ def scale_session(workout: dict, factor: float, paces: dict) -> None:
         cd["km"] = max(CD_KM, _half(cd["km"] * factor))
     workout["km"] = _half(session_km(workout["steps"], paces))
     workout["note"] = describe(workout["steps"], paces)
+
+
+def drop_rep(workout: dict, paces: dict) -> bool:
+    """The recovery trim's "one rep off": one rep fewer in the first repeat block that has more than 2. km and
+    note follow. False when no block can lose one (never below 2)."""
+    block = next((st for st in workout["steps"] if "repeat" in st and st["repeat"] > 2), None)
+    if block is None:
+        return False
+    block["repeat"] -= 1
+    workout["km"] = _half(session_km(workout["steps"], paces))
+    workout["note"] = describe(workout["steps"], paces)
+    return True

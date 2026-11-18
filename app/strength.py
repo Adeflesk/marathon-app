@@ -335,6 +335,14 @@ def _hops(phase: str, stage: int) -> dict:
     return st
 
 
+RECOVERY_NOTE = "Trimmed for recovery: low HRV, confirmed by your last run."
+
+
+def trimmed_for_recovery(ctx: dict) -> bool:
+    """The recovery trim, not the check-in, is why this session (or suggestion) is trimmed."""
+    return bool(ctx.get("recovery")) and ctx.get("checkin_factor", ctx.get("factor", 1.0)) >= 1.0
+
+
 def _session(key: str, week: dict, eq: dict, ctx: dict, day) -> dict:
     phase = _phase_key(week)
     table = ROLE_RX["Rebuild" if ctx.get("restart") and phase != "Taper 2" else phase]
@@ -342,7 +350,8 @@ def _session(key: str, week: dict, eq: dict, ctx: dict, day) -> dict:
     factor = ctx.get("factor", 1.0)
     trims = []
     if factor < 1.0:
-        trims.append("Trimmed because of last week's check-in.")
+        # the recovery trim sets factor 0.9 too; its own note shows when the check-in alone wouldn't trim
+        trims.append(RECOVERY_NOTE if trimmed_for_recovery(ctx) else "Trimmed because of last week's check-in.")
     if key == "A" and ctx.get("wed_bad"):
         trims.append("Wednesday's session was hard, so the main lifts lose a set and effort is capped.")
     if key == "A" and ctx.get("ankle_flag"):
@@ -393,7 +402,8 @@ def _session(key: str, week: dict, eq: dict, ctx: dict, day) -> dict:
 def sessions_for_week(week: dict, eq: dict, ctx: dict) -> list[dict]:
     """Thursday A and Tuesday B for one plan week, per the report's phase table and override rules.
 
-    ctx: factor, wed_bad, ankle_flag, hop_stage (None = not yet), balance_stage, restart, days.
+    ctx: factor, wed_bad, ankle_flag, hop_stage (None = not yet), balance_stage, restart, days; after a recovery
+    trim also recovery (True) and checkin_factor (the check-in's own factor, for the note).
     """
     phase = _phase_key(week)
     if phase == "Race week":

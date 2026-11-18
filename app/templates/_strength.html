@@ -39,7 +39,7 @@ last time {% if lg.weight_kg is not none %}{{ kg(lg.weight_kg) }}{% else %}{{ re
     <div class="progress" aria-hidden="true"><i style="width: {{ (100 * done / n)|round(1) if n else 0 }}%"></i></div>
     <p class="mute small" style="margin-top:6px">{{ done }} of {{ n }} done</p>
   </div>
-  {% if session.movable %}<div>{{ ui.move_form(session, session.key, "button quiet") }}</div>{% endif %}
+  {% if session.movable or session.movable_back %}<div>{{ ui.move_form(session, session.key, "button quiet") }}</div>{% endif %}
   {{ ui.moved_note(session, session.key) }}
   {% if session.note %}<p class="notice">{{ session.note }}</p>{% endif %}
   <p class="small"><strong>Warm-up:</strong> {{ session.warmup }}</p>
