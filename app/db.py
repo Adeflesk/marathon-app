@@ -79,6 +79,14 @@ def init() -> None:
                 id INTEGER PRIMARY KEY,
                 source TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS run_steps (
+                id INTEGER PRIMARY KEY,
+                steps INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS steps (
+                date TEXT PRIMARY KEY,
+                total INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS checkins (
                 week INTEGER PRIMARY KEY,
                 feel INTEGER NOT NULL,
@@ -172,6 +180,18 @@ def actual_by_date() -> dict[str, dict]:
             if d["main"] is None or r["km"] > d["main"]["km"]:  # the day's longest run gets the review
                 d["main"] = {"id": r["id"], "km": r["km"], "seconds": r["seconds"]}
     return out
+
+
+def steps() -> list[dict]:
+    """Garmin's daily step totals, oldest first: {"date", "total", "run"}. `run` is the steps of that day's runs
+    (0 with none), worked out on every read so a run added or replaced later counts; None when one of the day's
+    runs has no step count yet."""
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT s.date, s.total, CASE WHEN COUNT(a.id) > COUNT(rs.id) THEN NULL "
+            "ELSE COALESCE(SUM(rs.steps), 0) END AS run "
+            "FROM steps s LEFT JOIN activities a ON a.date = s.date LEFT JOIN run_steps rs ON rs.id = a.id "
+            "GROUP BY s.date ORDER BY s.date")]
 
 
 def wellness() -> list[dict]:

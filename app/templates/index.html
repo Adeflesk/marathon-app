@@ -260,9 +260,10 @@
   <details>
     <summary>Km splits</summary>
     <table class="splits" style="margin-top:8px">
-      <tr><th>Km</th><th class="num">Pace</th><th class="num">Heart rate</th></tr>
+      {% set cad = r.splits|selectattr('cadence')|list %}
+      <tr><th>Km</th><th class="num">Pace</th><th class="num">Heart rate</th>{% if cad %}<th class="num">Cadence</th>{% endif %}</tr>
       {% for x in r.splits %}
-      <tr><td>{{ loop.index if x.km >= 0.95 else (x.km|round(2)) }}</td><td class="num">{{ x.pace|pace }}/km</td><td class="num">{{ x.hr or '' }}</td></tr>
+      <tr><td>{{ loop.index if x.km >= 0.95 else (x.km|round(2)) }}</td><td class="num">{{ x.pace|pace }}/km</td><td class="num">{{ x.hr or '' }}</td>{% if cad %}<td class="num">{{ x.cadence|round|int if x.cadence else '' }}</td>{% endif %}</tr>
       {% endfor %}
     </table>
   </details>

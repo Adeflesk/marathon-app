@@ -243,3 +243,8 @@ def test_restart_after_gap():
     assert ankle.restart(today, [log(56), log(50)], [check(55)])
     assert not ankle.restart(today, [log(59), log(57), log(50)], [check(55)])
     assert not ankle.restart(today, [log(50)], [check(50)])  # 10 days ago
+
+
+def test_trouble_dates_are_flag_rows():
+    got = ankle.trouble_dates([check(3), check(4, worse=False)], [log(5, pain=3), log(6, pain=1)])
+    assert got == {D0 + timedelta(days=3), D0 + timedelta(days=5)}
