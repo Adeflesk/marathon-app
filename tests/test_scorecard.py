@@ -1,3 +1,4 @@
+import json
 from datetime import date, timedelta
 
 import pytest
@@ -341,8 +342,48 @@ def test_card_has_verdict_rows_and_weakest(monkeypatch):
 def test_no_checkin_still_gives_verdict(monkeypatch):
     for n in range(1, 7):
         do_week(monkeypatch, n)
+    db.save_test("2026-10-20", "pogo_trial", 1, None)  # ankle data, so hops and balance compare something
+    weekly_lifts(date(2026, 10, 20), date(2026, 11, 24))
     synced_to("2026-11-29")
     s, weeks = view(monkeypatch, date(2026, 11, 30))
     c = scorecard.card(weeks, 5, s, weeks[0]["ankle_state"], s["paces"]["easy"])
     assert c["verdict"]["state"] in ("right", "off")
     assert next(r for r in c["rows"] if r["key"] == "feel")["arrow"] is None
+
+
+# --- final review fixes ---
+
+def faded_long_run(day, km=10):
+    splits, t = [], 0
+    for k in range(1, km + 1):
+        t += 390
+        splits.append({"distance": k, "seconds": t, "heartRate": 150, "cadence": 176 if k <= 6 else 168,
+                       "stepLength": 1.0, "contact": 250})
+    with db.conn() as c:
+        c.execute("INSERT INTO activities (id, date, km, seconds, avg_hr) VALUES (?,?,?,?,?)",
+                  (int(day.replace("-", "")), day, km, t, 150))
+        c.execute("INSERT INTO run_details (id, splits, laps) VALUES (?,?,?)", (int(day.replace("-", "")),
+                                                                               json.dumps(splits), "[]"))
+
+
+def test_week_one_with_a_form_note_is_still_too_early(monkeypatch):
+    for day, km in (("2026-10-19", 4.5), ("2026-10-21", 6), ("2026-10-24", 4.5)):
+        ran(day, km, 405)
+    faded_long_run("2026-10-25")
+    checkin(1, 4)
+    synced_to("2026-10-25")
+    s, weeks = view(monkeypatch, date(2026, 10, 27))
+    c = scorecard.card(weeks, 0, s, weeks[0]["ankle_state"], s["paces"]["easy"])
+    assert next(r for r in c["rows"] if r["key"] == "form")["arrow"] == "down"
+    assert c["verdict"]["state"] == "early"
+
+
+def test_poor_feel_never_hidden_behind_too_early():
+    rows = [row("plan", "down", past=False), row("mp", "down", past=False), row("feel", "down", value=2),
+            row("stages", "flat", "strength")]
+    assert scorecard.verdict(rows, None)["state"] == "off"
+
+
+def test_loads_skip_exercises_not_done_lately(monkeypatch):
+    lift("2026-10-22", 40)  # never logged again
+    assert strength(monkeypatch, date(2026, 12, 7), 7)["loads"]["arrow"] is None

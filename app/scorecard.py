@@ -53,11 +53,12 @@ def _long(weeks: list[dict], i: int) -> dict:
     if not this or this[-1]["drift"] is None:
         return _row("long", "running", None, "no long run with heart rate this week", True)
     r = this[-1]
-    if r["drift"] >= progress.DRIFT_WARN:
-        return _row("long", "running", "down", f"{r['km']:g} km, heart rate drifted {r['drift']:g}%", True)
     earlier = [x["km"] for x in runs if x["week"] < n]
+    past = bool(earlier)  # with no earlier long run this row judges a target, not a trend
+    if r["drift"] >= progress.DRIFT_WARN:
+        return _row("long", "running", "down", f"{r['km']:g} km, heart rate drifted {r['drift']:g}%", past)
     arrow = "up" if all(r["km"] > km for km in earlier) and earlier else "flat"
-    return _row("long", "running", arrow, f"{r['km']:g} km, drift {r['drift']:g}%", True)
+    return _row("long", "running", arrow, f"{r['km']:g} km, drift {r['drift']:g}%", past)
 
 
 def _plan(w: dict) -> dict:
@@ -86,7 +87,7 @@ def _mp(w: dict) -> dict:
 def _form(weeks: list[dict], i: int, ref_pace: float) -> dict:
     faded = [wo for wo in _done(weeks[i], ("easy", "long")) if "steps" not in wo and wo["review"].get("form")]
     if faded:
-        return _row("form", "running", "down", faded[-1]["review"]["note"].rstrip("."), True)
+        return _row("form", "running", "down", faded[-1]["review"]["note"].rstrip("."), False)
     reading = progress.cadence_reading(progress.cadence_trend(weeks[:i + 1], ref_pace))
     if reading is None:
         return _row("form", "running", None, "not enough cadence data yet", True)
@@ -101,15 +102,16 @@ def _feel(weeks: list[dict], i: int) -> dict:
     feel = ci["feel"]
     before = [x["checkin"]["feel"] for x in weeks[max(0, i - WINDOW):i] if x.get("checkin")]
     text = f"rated {feel} of 5"
+    past = len(before) >= PRIOR_MIN
     if feel <= FEEL_LOW:
         arrow = "down"
-    elif len(before) < PRIOR_MIN:
+    elif not past:
         arrow = None
     else:
         ref = mean(before)
         arrow = "down" if feel <= ref - FEEL_STEP else "up" if feel >= ref + FEEL_STEP else "flat"
         text += f", {ref:.1f} before"
-    return {**_row("feel", "running", arrow, text, True), "value": feel}
+    return {**_row("feel", "running", arrow, text, past), "value": feel}
 
 
 def running_rows(weeks: list[dict], i: int, s: dict, ref_pace: float) -> list[dict]:
@@ -132,9 +134,9 @@ def _sessions(w: dict) -> dict:
     return _row("sessions", "strength", arrow, f"{done} of {len(items)} sessions", False)
 
 
-def _load(logs: list[dict], day: str) -> tuple | None:
-    """(weight, rung) of the latest loaded log on or before `day`; logs are newest first."""
-    lg = next((x for x in logs if x["date"] <= day and (x.get("weight_kg") or x.get("rung"))), None)
+def _load(logs: list[dict], day: str, after: str = "") -> tuple | None:
+    """(weight, rung) of the latest loaded log on or before `day` (and after `after`); logs are newest first."""
+    lg = next((x for x in logs if after < x["date"] <= day and (x.get("weight_kg") or x.get("rung"))), None)
     return (lg.get("weight_kg") or 0, lg.get("rung") or 0) if lg else None
 
 
@@ -144,7 +146,7 @@ def _loads(w: dict, st: dict) -> dict:
     held_ok = w["phase"] in HOLD_PHASES
     up = down = pairs = 0
     for logs in st["by_ex"].values():
-        now, then = _load(logs, now_day), _load(logs, then_day)
+        now, then = _load(logs, now_day, then_day), _load(logs, then_day)  # not done since: not held
         if now is None or then is None:
             continue
         pairs += 1
@@ -177,7 +179,8 @@ def _stages(weeks: list[dict], w: dict, st: dict) -> dict:
     else:
         arrow = "flat"
     hop_text = "hops not started" if hop1 < 0 else f"hop stage {hop1}"
-    return _row("stages", "strength", arrow, f"{hop_text}, balance stage {bal1}", True)
+    started = (hop0, bal0) != (-1, 0) or (hop1, bal1) != (-1, 0)
+    return _row("stages", "strength", arrow, f"{hop_text}, balance stage {bal1}", started)
 
 
 def _ankle(weeks: list[dict], w: dict, st: dict) -> dict:
@@ -227,7 +230,8 @@ def verdict(rows: list[dict], fitness_before: str | None) -> dict:
         rated = f"you rated the week {feel['value']} of 5" if feel.get("value") is not None else "the week felt worse"
         return {"state": "disagree",
                 "text": f"The numbers and how you felt disagree: {k} of {n} improving or holding, but {rated}."}
-    if sum(1 for r in arrowed if r["past"]) < EARLY_MIN:
+    feel_down = bool(feel and feel["arrow"] == "down")
+    if not feel_down and sum(1 for r in arrowed if r["past"]) < EARLY_MIN:
         return {"state": "early", "text": "Too early to say: not enough weeks to compare yet."}
     if off:
         names = [LABELS[r["key"]] for r in (down or [by["fitness"]])]
