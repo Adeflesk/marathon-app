@@ -123,6 +123,7 @@ The verdict at the top goes by the first of these that applies:
 2. **The numbers and how you felt disagree:** you rated the week poorly while the numbers look fine. The
    numbers never overrule how you felt.
 3. **Too early to say:** fewer than 3 lines can be compared with past weeks yet. The first weeks read like this.
+   A poor feel is never hidden behind it.
 4. **Not the right direction:** two running lines are ↓, or fitness is ↓ two weeks running.
 5. **Right direction:** with how many lines are improving or holding.
 

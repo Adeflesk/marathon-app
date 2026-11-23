@@ -137,7 +137,7 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   `strength_rows()` gives `sessions`, `loads` (held counts as up in Cutback, Taper and Race week), `stages` (hop and
   balance replayed at the week's end and 28 days before, never before the plan), `ankle` and `snacks`.
   `verdict()` takes the first rule that applies: `ankle` down; `disagree` (feel down, not off: the numbers never overrule
-  the feel); `early` (< 3 `past` rows with arrows); `off` (2+ running rows other than feel down, or fitness down two weeks
+  the feel); `early` (< 3 `past` rows with arrows, i.e. compared with earlier weeks; never when feel is down); `off` (2+ running rows other than feel down, or fitness down two weeks
   running); `right`. `weakest()` gives the down rows in `ORDER` (max 2), else the first flat one. A stage stepping back is a
   weak spot, never the ankle verdict. Never changes the plan.
 - `app/fuel.py` — pure: `gel_minutes` (45, then every 35, none in the last 10; runs ≥ 90 min only),
