@@ -4,9 +4,10 @@ Pure, like progress.py: built from the weeks build_view() returns, recomputed pe
 Each row compares the scored week with the WINDOW completed weeks before it, or with a fixed target, and gives
 an arrow: "up", "flat", "down", or None when there's nothing to judge (shown as a dash, never counted).
 """
+from datetime import timedelta
 from statistics import mean, median
 
-from . import progress
+from . import ankle, progress
 
 WINDOW = 4  # weeks before the scored one that a row compares with
 PRIOR_MIN = 2  # earlier values a comparison needs
@@ -14,6 +15,8 @@ FIT_BPM = 2  # heart rate at easy pace this much lower (or higher) than before i
 PLAN_UP = 0.95  # share of planned km for "up"; progress.PLAN_OK (0.8) is the floor for "flat"
 FEEL_STEP = 1  # check-in feel this far from the earlier average is a change
 FEEL_LOW = 2  # a feel at or below this is "down" whatever came before
+SNACK_LOW = 2  # fewer snack days than this is "down"; progress.SNACK_DAYS (4) or more is "up"
+HOLD_PHASES = ("Cutback", "Taper", "Race week")  # held loads are the plan here, so they count as "up"
 
 
 def _row(key: str, group: str, arrow: str | None, text: str, past: bool) -> dict:
@@ -107,3 +110,91 @@ def running_rows(weeks: list[dict], i: int, s: dict, ref_pace: float) -> list[di
     w = weeks[i]
     return [_fitness(weeks, i, ref_pace), _long(weeks, i), _plan(w), _mp(w), _form(weeks, i, ref_pace),
             _feel(weeks, i)]
+
+
+def _end(w: dict):
+    return w["start"] + timedelta(days=6)
+
+
+def _sessions(w: dict) -> dict:
+    items = [x for x in w.get("strength", []) if not x.get("skipped")]
+    if not items:
+        return _row("sessions", "strength", None, "no strength sessions planned", False)
+    done = sum(1 for x in items if x["done"])
+    arrow = "up" if done == len(items) else "down" if done * 2 < len(items) else "flat"
+    return _row("sessions", "strength", arrow, f"{done} of {len(items)} sessions", False)
+
+
+def _load(logs: list[dict], day: str) -> tuple | None:
+    """(weight, rung) of the latest loaded log on or before `day`; logs are newest first."""
+    lg = next((x for x in logs if x["date"] <= day and (x.get("weight_kg") or x.get("rung"))), None)
+    return (lg.get("weight_kg") or 0, lg.get("rung") or 0) if lg else None
+
+
+def _loads(w: dict, st: dict) -> dict:
+    end = _end(w)
+    now_day, then_day = end.isoformat(), (end - timedelta(days=28)).isoformat()
+    held_ok = w["phase"] in HOLD_PHASES
+    up = down = pairs = 0
+    for logs in st["by_ex"].values():
+        now, then = _load(logs, now_day), _load(logs, then_day)
+        if now is None or then is None:
+            continue
+        pairs += 1
+        if now > then or (now == then and held_ok):
+            up += 1
+        elif now < then:
+            down += 1
+    if not pairs:
+        return _row("loads", "strength", None, "not enough logged loads to compare yet", True)
+    arrow = "up" if up > down else "down" if down > up else "flat"
+    held = pairs - up - down
+    return _row("loads", "strength", arrow, f"{up} up, {held} held, {down} down over 4 weeks", True)
+
+
+def _stages(weeks: list[dict], w: dict, st: dict) -> dict:
+    end = _end(w)
+    then = max(end - timedelta(days=28), weeks[0]["start"] - timedelta(days=1))
+
+    def at(day):
+        hop = ankle.hop_stage(day, st["tests"], st["checks"], st["logs"], st["checkins"], weeks)
+        bal = ankle.balance_stage(day, st["snacks"], st["tests"], st["checks"], hop, st["logs"], st["checkins"],
+                                  weeks)
+        return (-1 if hop is None else hop), bal
+
+    (hop1, bal1), (hop0, bal0) = at(end), at(then)
+    if hop1 < hop0 or bal1 < bal0:
+        arrow = "down"
+    elif hop1 > hop0 or bal1 > bal0:
+        arrow = "up"
+    else:
+        arrow = "flat"
+    hop_text = "hops not started" if hop1 < 0 else f"hop stage {hop1}"
+    return _row("stages", "strength", arrow, f"{hop_text}, balance stage {bal1}", True)
+
+
+def _ankle(weeks: list[dict], w: dict, st: dict) -> dict:
+    triggers = ankle._triggers(st["checks"], st["logs"], st["checkins"], weeks)
+    if any(progress._in(d.isoformat(), w) for d in triggers):
+        return _row("ankle", "strength", "down", "ankle worse or painful this week", False)
+    if w["week"] in ankle.test_weeks(weeks):
+        table = progress.ankle_table(weeks, st["tests"])
+        cols = table["columns"]
+        if w["week"] in cols and cols.index(w["week"]) > 0:
+            k = cols.index(w["week"])
+            met = [sum(1 for r in table["rows"] if r["cells"][j] and r["cells"][j]["met"]) for j in (k - 1, k)]
+            if met[1] > met[0]:
+                return _row("ankle", "strength", "up", f"tests met {met[1]} targets, {met[0]} last time", False)
+    return _row("ankle", "strength", "flat", "no ankle trouble this week", False)
+
+
+def _snacks(w: dict, st: dict) -> dict:
+    days = len({x["date"] for x in st["snacks"] if progress._in(x["date"], w)})
+    arrow = "up" if days >= progress.SNACK_DAYS else "down" if days < SNACK_LOW else "flat"
+    return _row("snacks", "strength", arrow, f"snacks on {days} day{'' if days == 1 else 's'}", False)
+
+
+def strength_rows(weeks: list[dict], i: int, st: dict) -> list[dict]:
+    """Strength done, strength loads, hops and balance, ankle and snacks, for weeks[i]."""
+    w = weeks[i]
+    return [_sessions(w), _loads(w, st), _stages(weeks, w, st), _ankle(weeks, w, st), _snacks(w, st)]

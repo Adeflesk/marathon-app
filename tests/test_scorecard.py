@@ -1,9 +1,22 @@
-from datetime import date
+from datetime import date, timedelta
+
+import pytest
 
 from app import db, main, scorecard
-from tests.test_summaries import clean, ran  # noqa: F401  (clean is an autouse fixture)
+from tests.test_summaries import clean, lifted, ran  # noqa: F401  (clean is an autouse fixture)
 
 START = date(2026, 10, 19)  # plan week 1
+
+
+@pytest.fixture(autouse=True)
+def no_tests():
+    """test_summaries' clean() leaves ankle_tests alone; these tests write to it."""
+    db.init()
+    with db.conn() as c:
+        c.execute("DELETE FROM ankle_tests")
+    yield
+    with db.conn() as c:
+        c.execute("DELETE FROM ankle_tests")
 
 
 def view(monkeypatch, day):
@@ -129,3 +142,111 @@ def test_running_row_keys_in_order(monkeypatch):
     s, weeks = view(monkeypatch, date(2026, 10, 27))
     assert [r["key"] for r in scorecard.running_rows(weeks, 0, s, s["paces"]["easy"])] == \
         ["fitness", "long", "plan", "mp", "form", "feel"]
+
+
+# --- strength and ankle ---
+
+def strength(monkeypatch, day, n):
+    s, weeks = view(monkeypatch, day)
+    return {r["key"]: r for r in scorecard.strength_rows(weeks, n - 1, weeks[0]["ankle_state"])}
+
+
+def test_strength_done_all_up(monkeypatch):
+    lifted("2026-10-20", "calf_raise_bent")
+    lifted("2026-10-22", "box_squat")
+    row = strength(monkeypatch, date(2026, 10, 27), 1)["sessions"]
+    assert row["arrow"] == "up" and row["group"] == "strength" and not row["past"]
+
+
+def test_strength_done_none_is_down(monkeypatch):
+    assert strength(monkeypatch, date(2026, 10, 27), 1)["sessions"]["arrow"] == "down"
+
+
+def test_strength_done_ignores_skipped(monkeypatch):
+    lifted("2026-10-22", "box_squat")
+    db.save_move("2026-10-20", "B", None)
+    assert strength(monkeypatch, date(2026, 10, 27), 1)["sessions"]["arrow"] == "up"
+    db.save_move("2026-10-22", "A", None)
+    assert strength(monkeypatch, date(2026, 10, 27), 1)["sessions"]["arrow"] is None
+
+
+def lift(day, kg, exercise="box_squat"):
+    db.save_log({"date": day, "exercise": exercise, "weight_kg": kg, "reps": [8, 8], "rating": "right",
+                 "ankle_pain": 1})
+
+
+def test_loads_up_when_weight_rises(monkeypatch):
+    lift("2026-10-22", 40)
+    lift("2026-11-19", 45)
+    row = strength(monkeypatch, date(2026, 11, 23), 5)["loads"]
+    assert row["arrow"] == "up" and row["past"]
+
+
+def test_loads_down_when_weight_drops(monkeypatch):
+    lift("2026-10-22", 45)
+    lift("2026-11-19", 40)
+    assert strength(monkeypatch, date(2026, 11, 23), 5)["loads"]["arrow"] == "down"
+
+
+def test_loads_held_is_flat_in_build_and_up_in_cutback(monkeypatch):
+    lift("2026-10-22", 40)
+    lift("2026-11-19", 40)
+    assert strength(monkeypatch, date(2026, 11, 23), 5)["loads"]["arrow"] == "flat"
+    lift("2026-12-03", 40)  # week 7 is a cutback
+    assert strength(monkeypatch, date(2026, 12, 7), 7)["loads"]["arrow"] == "up"
+
+
+def test_loads_dash_without_history(monkeypatch):
+    assert strength(monkeypatch, date(2026, 10, 27), 1)["loads"]["arrow"] is None
+
+
+def weekly_lifts(first, last):
+    d = first
+    while d <= last:
+        lifted(d.isoformat(), "calf_raise_bent")
+        d += timedelta(days=7)
+
+
+def test_stages_down_when_hop_steps_back(monkeypatch):
+    db.save_test("2026-10-20", "pogo_trial", 1, None)  # stage 0 from 21 Oct, stage 1 from 4 Nov
+    weekly_lifts(date(2026, 10, 20), date(2026, 12, 1))
+    db.save_check("2026-12-02", True, "sore")  # week 7: steps back to 0
+    rows = strength(monkeypatch, date(2026, 12, 7), 7)
+    assert rows["stages"]["arrow"] == "down" and rows["stages"]["past"]
+
+
+def test_stages_early_weeks_compare_with_plan_start(monkeypatch):
+    db.save_test("2026-10-20", "pogo_trial", 1, None)
+    weekly_lifts(date(2026, 10, 20), date(2026, 10, 27))
+    assert strength(monkeypatch, date(2026, 11, 2), 2)["stages"]["arrow"] in ("flat", "up")
+
+
+def test_ankle_down_on_trigger_in_week(monkeypatch):
+    db.save_check("2026-10-23", True, "sore")
+    row = strength(monkeypatch, date(2026, 10, 27), 1)["ankle"]
+    assert row["arrow"] == "down" and not row["past"]
+
+
+def test_ankle_flat_without_trigger(monkeypatch):
+    assert strength(monkeypatch, date(2026, 10, 27), 1)["ankle"]["arrow"] == "flat"
+
+
+def test_ankle_up_when_tests_meet_more_targets(monkeypatch):
+    db.save_test("2026-10-21", "calf_raises", 20, 30)
+    db.save_test("2026-11-11", "calf_raises", 26, 30)  # week 4 is a test week
+    assert strength(monkeypatch, date(2026, 11, 16), 4)["ankle"]["arrow"] == "up"
+
+
+def test_snacks_thresholds(monkeypatch):
+    for days, arrow in ((4, "up"), (2, "flat"), (1, "down")):
+        with db.conn() as c:
+            c.execute("DELETE FROM snack_logs")
+        for k in range(days):
+            db.toggle_snack((START + timedelta(days=k)).isoformat(), "band_eversion")
+        assert strength(monkeypatch, date(2026, 10, 27), 1)["snacks"]["arrow"] == arrow, days
+
+
+def test_strength_row_keys_in_order(monkeypatch):
+    s, weeks = view(monkeypatch, date(2026, 10, 27))
+    assert [r["key"] for r in scorecard.strength_rows(weeks, 0, weeks[0]["ankle_state"])] == \
+        ["sessions", "loads", "stages", "ankle", "snacks"]
