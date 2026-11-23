@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
-from . import ankle, db, fuel, garmin, garmin_api, garmin_sync, moves, progress, strength, view
+from . import ankle, db, fuel, garmin, garmin_api, garmin_sync, moves, progress, scorecard, strength, view
 from .config import load_settings, race_date
 from .pace_engine import fmt_pace, fmt_time, pace_per_mi, parse_time
 from .plan import generate
@@ -118,6 +118,7 @@ templates.env.filters["clock"] = lambda s: fmt_time(s)[2:] if s < 3600 else fmt_
 templates.env.filters["dayx"] = lambda d, d0: (date.fromisoformat(d) - date.fromisoformat(d0)).days  # chart x
 templates.env.filters["longdate"] = lambda d: date.fromisoformat(d).strftime("%-d %b")
 templates.env.globals["band"] = band_segments
+templates.env.globals["LABELS"] = scorecard.LABELS
 
 
 def today() -> date:

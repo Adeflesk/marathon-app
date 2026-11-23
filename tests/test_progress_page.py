@@ -89,3 +89,26 @@ def test_steps_pattern_note(client, monkeypatch):
     assert 'aria-label="On-feet steps' in page
     view["pattern"].append(date(2026, 11, 13))
     assert "3 times in the last 4 weeks" in client.get("/progress").text
+
+
+def _week_one_run():
+    with db.conn() as c:
+        c.execute("INSERT INTO activities (id, date, km, seconds, avg_hr) VALUES (1, '2026-10-25', 10, 3950, 150)")
+
+
+def test_progress_shows_scorecard_rows(client, monkeypatch):
+    _week_one_run()
+    on(monkeypatch, date(2026, 10, 27))
+    page = client.get("/progress").text
+    assert 'id="week-1"' in page and 'aria-label="Fitness:' in page and "Weakest" in page
+    assert "Too early to say: not enough weeks to compare yet." in page
+    assert "Strength and ankle" in page and "Next week:" in page
+
+
+def test_this_week_shows_verdict_and_link(client, monkeypatch):
+    _week_one_run()
+    on(monkeypatch, date(2026, 10, 26))
+    page = client.get("/").text
+    assert "Last week, week 1" in page and 'href="/progress#week-1"' in page
+    assert "Too early to say: not enough weeks to compare yet." in page
+    assert "Strength: 0 of 2 sessions" not in page  # the fact sentences stay on Progress
