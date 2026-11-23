@@ -180,3 +180,32 @@ def test_form_note_does_not_change_verdict(settings):
                       settings["paces"])
     assert r["verdict"] == "good" and r["note"].startswith("Cadence fell")
     assert r["splits"][0]["cadence"] == 176 and r["splits"][0]["stride"] == 1.0
+
+
+def test_long_run_mp_finish_sets_mp_on(settings):
+    lr = next(x for w in generate(settings, TODAY) for x in w["workouts"] if x["type"] == "long" and x.get("mp_km") == 6)
+    n = int(lr["km"])
+
+    def run(mp_pace):
+        sp, t = [], 0
+        for i in range(1, n + 1):
+            t += mp_pace if i > n - 6 else 390
+            sp.append({"distance": i, "seconds": t, "heartRate": 150})
+        return review.review(lr, {"km": n, "seconds": t}, {"splits": sp, "laps": []}, settings["paces"])
+
+    assert run(settings["paces"]["marathon"])["mp_on"] is True
+    assert run(settings["paces"]["marathon"] + 30)["mp_on"] is False
+
+
+def test_easy_run_has_no_mp_on(settings):
+    r = review.review(planned(settings, 1, "easy"), {"km": 6, "seconds": 6 * 405},
+                      {"splits": steady(6, 405), "laps": []}, settings["paces"])
+    assert r["mp_on"] is None
+
+
+def test_form_flag_follows_form_note(settings):
+    def r(cad):
+        return review.review(planned(settings, 1, "easy"), {"km": 12, "seconds": 4800},
+                             {"splits": form_run(12, cad), "laps": []}, settings["paces"])
+    assert r(lambda k: 176 if k <= 8 else 170)["form"] is True
+    assert r(lambda k: 176)["form"] is False
