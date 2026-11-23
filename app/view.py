@@ -466,9 +466,11 @@ def move_warning(weeks: list[dict], session: str, day: date | None, orig: date |
 # --- page data ---
 
 def dashboard(s: dict, weeks: list[dict], t: date, results: list[dict], token_expires: date | None,
-              confirm: str = "", on: date | None = None, orig: date | None = None, by: int = 1) -> dict:
+              confirm: str = "", on: date | None = None, orig: date | None = None, by: int = 1,
+              ref_pace: float | None = None) -> dict:
     """What This week shows, from a built view. `token_expires` is None when there's no key or no expiry date;
-    `confirm`, `on` and `orig` name a move waiting on a clash warning."""
+    `confirm`, `on` and `orig` name a move waiting on a clash warning; `ref_pace` is the settings' easy pace the
+    scorecard's fitness row compares at (None: today's easy pace)."""
     current = next((w for w in weeks if w["is_current"]), None)
     upcoming = weeks[0] if t < weeks[0]["start"] else current
     st = weeks[0]["ankle_state"]
@@ -490,7 +492,7 @@ def dashboard(s: dict, weeks: list[dict], t: date, results: list[dict], token_ex
         "ankle_flag": st["flag_until"],
         "hop_stage": st["hop_stage"],
         "move_warning": move_warning(weeks, confirm, on, orig, by),
-        "last_summary": last_summary(weeks, s, st, results, t),
+        "last_summary": last_summary(weeks, s, st, results, t, ref_pace),
         "token_warning": {"expires": token_expires, "days": left} if left is not None and left <= garmin_api.KEY_WARN_DAYS
         else None,
         "profile": profile(weeks),
@@ -526,11 +528,12 @@ def ankle_tests(week: dict | None, st: dict, t: date) -> dict:
     return {k: {**ankle.TESTS[k], "logged": logged.get(k)} for k in keys}
 
 
-def last_summary(weeks: list[dict], s: dict, st: dict, results: list[dict], t: date) -> dict | None:
-    """Last week's summary, on Monday and Tuesday only."""
+def last_summary(weeks: list[dict], s: dict, st: dict, results: list[dict], t: date,
+                 ref_pace: float | None = None) -> dict | None:
+    """Last week's summary and scorecard, on Monday and Tuesday only."""
     if t.weekday() >= 2:
         return None
-    done = progress.summaries(weeks, s, st, results, t)
+    done = progress.summaries(weeks, s, st, results, t, ref_pace)
     return done[0] if done and done[0]["end"] == t - timedelta(days=t.weekday() + 1) else None
 
 

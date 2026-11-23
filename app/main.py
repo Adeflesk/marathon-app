@@ -173,7 +173,7 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
     s, weeks, auto_sync = view_with_sync()
     expires = garmin_api.key_expiry() if os.environ.get("GARMIN_API_KEY") else None
     page = view.dashboard(s, weeks, today(), db.results(), expires, confirm, _day(on), _day(orig),
-                          -1 if by == "-1" else 1)
+                          -1 if by == "-1" else 1, load_settings()["paces"]["easy"])
     return templates.TemplateResponse(request, "index.html",
                                       {**page, "auto_sync": auto_sync, "msg": msg, "prev_open": prev == "1"})
 
@@ -205,7 +205,7 @@ def progress_page(request: Request, msg: str = ""):
         "trend_start": (t - timedelta(days=progress.TREND_DAYS - 1)).isoformat(),
         "long_runs": progress.long_runs(weeks), "plan": progress.plan_bars(weeks),
         "ankle": progress.ankle_table(weeks, st["tests"]), "ankle_state": st,
-        "summaries": progress.summaries(weeks, s, st, db.results(), t),
+        "summaries": progress.summaries(weeks, s, st, db.results(), t, ref_pace),
     })
 
 

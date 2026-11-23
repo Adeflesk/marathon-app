@@ -17,6 +17,11 @@ FEEL_STEP = 1  # check-in feel this far from the earlier average is a change
 FEEL_LOW = 2  # a feel at or below this is "down" whatever came before
 SNACK_LOW = 2  # fewer snack days than this is "down"; progress.SNACK_DAYS (4) or more is "up"
 HOLD_PHASES = ("Cutback", "Taper", "Race week")  # held loads are the plan here, so they count as "up"
+EARLY_MIN = 3  # rows that compare with past weeks needed before a week gets a verdict
+ORDER = ("ankle", "feel", "fitness", "long", "plan", "stages", "loads", "form", "mp", "sessions", "snacks")
+LABELS = {"ankle": "Ankle", "feel": "How it felt", "fitness": "Fitness", "long": "Long run", "plan": "Plan done",
+          "stages": "Hops and balance", "loads": "Strength loads", "form": "Late-run form", "mp": "Marathon pace",
+          "sessions": "Strength done", "snacks": "Snacks"}
 
 
 def _row(key: str, group: str, arrow: str | None, text: str, past: bool) -> dict:
@@ -97,12 +102,14 @@ def _feel(weeks: list[dict], i: int) -> dict:
     before = [x["checkin"]["feel"] for x in weeks[max(0, i - WINDOW):i] if x.get("checkin")]
     text = f"rated {feel} of 5"
     if feel <= FEEL_LOW:
-        return _row("feel", "running", "down", text, True)
-    if len(before) < PRIOR_MIN:
-        return _row("feel", "running", None, text, True)
-    ref = mean(before)
-    arrow = "down" if feel <= ref - FEEL_STEP else "up" if feel >= ref + FEEL_STEP else "flat"
-    return _row("feel", "running", arrow, f"{text}, {ref:.1f} before", True)
+        arrow = "down"
+    elif len(before) < PRIOR_MIN:
+        arrow = None
+    else:
+        ref = mean(before)
+        arrow = "down" if feel <= ref - FEEL_STEP else "up" if feel >= ref + FEEL_STEP else "flat"
+        text += f", {ref:.1f} before"
+    return {**_row("feel", "running", arrow, text, True), "value": feel}
 
 
 def running_rows(weeks: list[dict], i: int, s: dict, ref_pace: float) -> list[dict]:
@@ -198,3 +205,50 @@ def strength_rows(weeks: list[dict], i: int, st: dict) -> list[dict]:
     """Strength done, strength loads, hops and balance, ankle and snacks, for weeks[i]."""
     w = weeks[i]
     return [_sessions(w), _loads(w, st), _stages(weeks, w, st), _ankle(weeks, w, st), _snacks(w, st)]
+
+
+def _and(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def verdict(rows: list[dict], fitness_before: str | None) -> dict:
+    """{"state", "text"}: the first rule that applies. The ankle first, then the user's feel (never overruled by
+    the numbers), then too early, then not the right direction, then right direction."""
+    by = {r["key"]: r for r in rows}
+    arrowed = [r for r in rows if r["arrow"] is not None]
+    k, n = sum(1 for r in arrowed if r["arrow"] in ("up", "flat")), len(arrowed)
+    if by.get("ankle", {}).get("arrow") == "down":
+        return {"state": "ankle", "text": "Ankle first: not the right direction."}
+    down = [r for r in rows if r["group"] == "running" and r["key"] != "feel" and r["arrow"] == "down"]
+    fitness = by.get("fitness", {}).get("arrow")
+    off = len(down) >= 2 or (fitness == "down" and fitness_before == "down")
+    feel = by.get("feel")
+    if feel and feel["arrow"] == "down" and not off:
+        rated = f"you rated the week {feel['value']} of 5" if feel.get("value") is not None else "the week felt worse"
+        return {"state": "disagree",
+                "text": f"The numbers and how you felt disagree: {k} of {n} improving or holding, but {rated}."}
+    if sum(1 for r in arrowed if r["past"]) < EARLY_MIN:
+        return {"state": "early", "text": "Too early to say: not enough weeks to compare yet."}
+    if off:
+        names = [LABELS[r["key"]] for r in (down or [by["fitness"]])]
+        return {"state": "off", "text": f"Not the right direction: {_and(names)} down."}
+    return {"state": "right", "text": f"Right direction: {k} of {n} improving or holding."}
+
+
+def weakest(rows: list[dict]) -> list[str]:
+    """The weakest one or two areas, most important first, as plain sentences."""
+    ranked = sorted((r for r in rows if r["key"] in LABELS), key=lambda r: ORDER.index(r["key"]))
+    down = [r for r in ranked if r["arrow"] == "down"][:2]
+    if down:
+        return [f"{LABELS[r['key']]}: {r['text']}." for r in down]
+    flat = next((r for r in ranked if r["arrow"] == "flat"), None)
+    if flat:
+        return [f"Holding, not yet improving: {LABELS[flat['key']]} ({flat['text']})."]
+    return ["Nothing weak this week."]
+
+
+def card(weeks: list[dict], i: int, s: dict, st: dict, ref_pace: float) -> dict:
+    """The scorecard for weeks[i]: {"verdict", "rows", "weakest"}."""
+    rows = running_rows(weeks, i, s, ref_pace) + strength_rows(weeks, i, st)
+    before = _fitness(weeks, i - 1, ref_pace)["arrow"] if i > 0 else None
+    return {"verdict": verdict(rows, before), "rows": rows, "weakest": weakest(rows)}

@@ -250,3 +250,99 @@ def test_strength_row_keys_in_order(monkeypatch):
     s, weeks = view(monkeypatch, date(2026, 10, 27))
     assert [r["key"] for r in scorecard.strength_rows(weeks, 0, weeks[0]["ankle_state"])] == \
         ["sessions", "loads", "stages", "ankle", "snacks"]
+
+
+# --- verdict and weakest ---
+
+def row(key, arrow, group="running", past=True, text="x", value=None):
+    r = {"key": key, "group": group, "arrow": arrow, "text": text, "past": past}
+    if value is not None:
+        r["value"] = value
+    return r
+
+
+def test_ankle_down_overrides_everything():
+    rows = [row("ankle", "down", "strength", False), row("fitness", "up"), row("long", "up"), row("feel", "up")]
+    assert scorecard.verdict(rows, None)["state"] == "ankle"
+
+
+def test_feel_down_with_good_numbers_disagrees():
+    rows = [row("fitness", "up"), row("long", "flat"), row("form", "up"),
+            row("feel", "down", text="rated 2 of 5", value=2)]
+    v = scorecard.verdict(rows, None)
+    assert v["state"] == "disagree" and "2 of 5" in v["text"]
+
+
+def test_feel_down_early_still_disagrees():
+    rows = [row("fitness", None), row("long", None), row("feel", "down", value=2), row("plan", "up", past=False)]
+    assert scorecard.verdict(rows, None)["state"] == "disagree"
+
+
+def test_two_running_rows_down_is_off():
+    rows = [row("fitness", "down"), row("long", "down"), row("form", "up"), row("feel", "flat", value=4)]
+    v = scorecard.verdict(rows, None)
+    assert v["state"] == "off" and "Fitness and Long run" in v["text"]
+
+
+def test_feel_and_one_running_row_down_is_not_off():
+    rows = [row("fitness", "down"), row("long", "up"), row("form", "up"), row("feel", "down", value=2)]
+    assert scorecard.verdict(rows, None)["state"] == "disagree"
+
+
+def test_fitness_down_two_weeks_is_off():
+    rows = [row("fitness", "down"), row("long", "up"), row("form", "up")]
+    assert scorecard.verdict(rows, "down")["state"] == "off"
+    assert scorecard.verdict(rows, None)["state"] == "right"
+
+
+def test_target_rows_alone_are_too_early():
+    rows = [row("plan", "up", past=False), row("sessions", "up", "strength", False),
+            row("snacks", "up", "strength", False), row("ankle", "flat", "strength", False)]
+    assert scorecard.verdict(rows, None)["state"] == "early"
+
+
+def test_right_direction_counts_only_arrows():
+    rows = [row("fitness", "up"), row("long", "up"), row("form", "flat"), row("plan", "up", past=False),
+            row("mp", None, past=False), row("feel", None)]
+    v = scorecard.verdict(rows, None)
+    assert v["state"] == "right" and "4 of 4" in v["text"]
+
+
+def test_weakest_orders_and_caps_at_two():
+    rows = [row("snacks", "down", "strength", False, "snacks on 1 day"), row("fitness", "down", text="hr up"),
+            row("ankle", "down", "strength", False, "sore")]
+    assert scorecard.weakest(rows) == ["Ankle: sore.", "Fitness: hr up."]
+
+
+def test_weakest_holding_when_nothing_down():
+    rows = [row("snacks", "flat", "strength", False, "snacks on 3 days"), row("fitness", "up"),
+            row("loads", "flat", "strength", text="2 held")]
+    assert scorecard.weakest(rows) == ["Holding, not yet improving: Strength loads (2 held)."]
+
+
+def test_weakest_nothing():
+    assert scorecard.weakest([row("fitness", "up"), row("long", None)]) == ["Nothing weak this week."]
+
+
+def test_stage_down_is_weak_spot_not_ankle_verdict():
+    rows = [row("fitness", "up"), row("long", "up"), row("form", "up"), row("ankle", "flat", "strength", False),
+            row("stages", "down", "strength", text="hop stage 0")]
+    assert scorecard.verdict(rows, None)["state"] == "right"
+    assert scorecard.weakest(rows) == ["Hops and balance: hop stage 0."]
+
+
+def test_card_has_verdict_rows_and_weakest(monkeypatch):
+    do_week(monkeypatch, 1)
+    s, weeks = view(monkeypatch, date(2026, 10, 27))
+    c = scorecard.card(weeks, 0, s, weeks[0]["ankle_state"], s["paces"]["easy"])
+    assert set(c) == {"verdict", "rows", "weakest"} and len(c["rows"]) == 11
+
+
+def test_no_checkin_still_gives_verdict(monkeypatch):
+    for n in range(1, 7):
+        do_week(monkeypatch, n)
+    synced_to("2026-11-29")
+    s, weeks = view(monkeypatch, date(2026, 11, 30))
+    c = scorecard.card(weeks, 5, s, weeks[0]["ankle_state"], s["paces"]["easy"])
+    assert c["verdict"]["state"] in ("right", "off")
+    assert next(r for r in c["rows"] if r["key"] == "feel")["arrow"] is None
