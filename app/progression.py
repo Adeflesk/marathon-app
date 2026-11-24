@@ -196,6 +196,12 @@ def _rate(ex, eq, last, prev, last_w, last_rung, done, rating, phase, ladder, ou
     def climb():
         """No heavier weight: move one rung down the ladder."""
         if not ladder:
+            if done > hi:  # past the top of the range: the top is the target, said so it doesn't read as less
+                harder = EXERCISES.get(ex["key"], {}).get("harder")
+                why = f"{was} at {done} {unit}, past the {lo}–{hi} {unit} range, so {hi} {unit} is plenty here"
+                if harder:
+                    why += f". The {EXERCISES[harder]['name']} comes with the next block"
+                return out(last_w, hi, last_rung, why)
             return out(last_w, hi, last_rung, f"{was} last time {at}, so hold {hi} {unit}")
         rung, reps = last_rung + 1, lo
         if rung == 1:

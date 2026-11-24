@@ -353,6 +353,16 @@ def ankle_state(t: date, weeks: list[dict], f: Facts) -> dict:
     }
 
 
+def lower_than_last(sg: dict, last: dict | None) -> bool:
+    """The suggestion asks for less weight, or fewer reps or seconds, than last time (so the page says why)."""
+    if not last:
+        return False
+    w = last.get("weight_kg")
+    if w is not None and sg["weight"] is not None and sg["weight"] != w:
+        return sg["weight"] < w
+    return bool(last.get("reps")) and sg["reps"] < min(last["reps"])
+
+
 def weight_range(weights: list[float]) -> dict | None:
     """Min, max and an input step that lands on every available weight, or None for unloaded work."""
     if not weights:
@@ -412,6 +422,7 @@ def attach_strength(w: dict, s: dict, eq: dict, st: dict, t: date, moved: dict |
             ex["suggestion"] = progression.suggest(ex, history, pctx, eq, today=t)
             ex["log"] = st["by_key"].get((day, ex["key"]))
             ex["last"] = next((lg for lg in history if lg["date"] < day), None)
+            ex["lower"] = lower_than_last(ex["suggestion"], ex["last"])
             ex["weights"] = weight_range(progression.available_weights(ex, eq))
         # A past session you logged shows what you did; the rest (skipped, or added to the routine since) is
         # listed apart. They can't be logged after the day, so they don't count against it.

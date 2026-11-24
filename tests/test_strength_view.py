@@ -243,6 +243,17 @@ def test_card_shows_last_and_suggestion(client, monkeypatch):
     assert "1 of " in html
 
 
+def test_lower_target_than_last_time_shows_why(client, monkeypatch):
+    tue = D0 + timedelta(days=1)
+    on(monkeypatch, tue)
+    client.post("/strength/log", data={"date": tue.isoformat(), "exercise": "copenhagen_short", "rung": "0",
+                                       "target_reps": "20", "rep1": "60", "rep2": "60", "rating": "right"})
+    html = page(client, monkeypatch, tue + timedelta(days=7))
+    ex = html[html.index('id="ex-copenhagen_short"'):]
+    ex = ex[:ex.index("</details>")]
+    assert "past the" in ex and "is plenty here" in ex
+
+
 def test_ankle_item_has_pain_select(client, monkeypatch):
     html = page(client, monkeypatch, D0 + timedelta(days=3))
     ex = html[html.index('id="ex-calf_raise_straight"'):]

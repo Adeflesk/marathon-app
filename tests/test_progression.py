@@ -249,6 +249,24 @@ def test_copenhagen_adds_seconds_in_range():
     assert (s["reps"], s["rung"], s["level"]) == (25, 0, None)
 
 
+def test_hold_past_the_range_says_so():
+    cop = ex("copenhagen_short", "adductor", 20, 30, sets=2)
+    s = run(cop, [log(None, [40, 40], "right", exercise="copenhagen_short")])
+    assert s["reps"] == 30
+    assert s["reason"] == ("Right at 40 s, past the 20–30 s range, so 30 s is plenty here. "
+                           "The Copenhagen plank, long lever comes with the next block")
+    core = ex("pallof_press", "core", 30, 40, sets=2)
+    s = run(core, [log(None, [50, 50], "easy", exercise="pallof_press")])
+    assert s["reps"] == 40
+    assert s["reason"] == "Easy at 50 s, past the 30–40 s range, so 40 s is plenty here"
+
+
+def test_hold_at_the_top_still_holds():
+    core = ex("pallof_press", "core", 30, 40, sets=2)
+    s = run(core, [log(None, [40, 40], "right", exercise="pallof_press")])
+    assert s["reason"] == "Right last time at 40 s, so hold 40 s"
+
+
 def test_dumbbell_lower_easy_twice_is_2_5_total():
     lunge = ex("reverse_lunge", "single_leg", 6, 8)
     k = {"exercise": "reverse_lunge"}

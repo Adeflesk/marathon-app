@@ -71,7 +71,7 @@ last time {% if lg.weight_kg is not none %}{{ kg(lg.weight_kg) }}{% else %}{{ re
         {%- else %}Aim for {{ sg.reps }} {{ 'reps' if not unit else unit }}{% endif %}
         {%- if level %}, {{ level }}{% endif %}
         {%- if ex.last %} ({{ last_text(ex.last, ex) }}){% endif %}.</p>
-      {% if not ex.last or '; but' in sg.reason or 'days off' in sg.reason %}<p class="mute small">{{ sg.reason }}</p>{% endif %}
+      {% if not ex.last or ex.lower or '; but' in sg.reason or 'days off' in sg.reason %}<p class="mute small">{{ sg.reason }}</p>{% endif %}
       {% endif %}
       <p class="mute small">{{ ex.cue }}</p>
       <div class="fields">
