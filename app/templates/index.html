@@ -230,9 +230,10 @@
 {% if last_summary %}{% set ls = last_summary %}
 <section class="stack summary-card" aria-labelledby="last-week-h">
   <h2 id="last-week-h">Last week, week {{ ls.week }}</h2>
-  <p class="mute">{{ ls.done|km }} of {{ ls.planned|km }} km. {{ ls.sentences[1:]|join(' ') }}</p>
+  <p><strong>{{ ls.card.verdict.text }}</strong></p>
+  <p class="mute">{{ ls.done|km }} of {{ ls.planned|km }} km. {{ ls.card.weakest|join(' ') }}</p>
   <p><strong>This week:</strong> {{ ls.next }}</p>
-  <p><a href="/progress">Your progress</a></p>
+  <p><a href="/progress#week-{{ ls.week }}">Last week's scorecard</a></p>
 </section>
 {% endif %}
 {% if tests_due %}{{ sx.test_card(today, tests, injured_side) }}{% endif %}

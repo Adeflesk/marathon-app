@@ -366,6 +366,11 @@ def _summary(w: dict, weeks: list[dict], s: dict, st: dict, results: list[dict])
             "planned": w["target_km"], "done": w["actual_km"], "sentences": sentences, "next": focus}
 
 
-def summaries(weeks: list[dict], s: dict, st: dict, results: list[dict], t: date) -> list[dict]:
-    """One per completed plan week, newest first."""
-    return [_summary(w, weeks, s, st, results) for w in reversed(weeks) if w["start"] + timedelta(days=6) < t]
+def summaries(weeks: list[dict], s: dict, st: dict, results: list[dict], t: date,
+              ref_pace: float | None = None) -> list[dict]:
+    """One per completed plan week, newest first, each with its scorecard (`card`). `ref_pace` is the fixed easy
+    pace the fitness rows compare at (the settings' easy pace, as the Progress page uses); None means today's."""
+    from . import scorecard  # scorecard imports this module
+    ref = s["paces"]["easy"] if ref_pace is None else ref_pace
+    return [{**_summary(w, weeks, s, st, results), "card": scorecard.card(weeks, i, s, st, ref)}
+            for i, w in reversed(list(enumerate(weeks))) if w["start"] + timedelta(days=6) < t]

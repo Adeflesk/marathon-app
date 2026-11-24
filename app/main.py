@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
-from . import ankle, db, fuel, garmin, garmin_api, garmin_sync, moves, progress, strength, view
+from . import ankle, db, fuel, garmin, garmin_api, garmin_sync, moves, progress, scorecard, strength, view
 from .config import load_settings, race_date
 from .pace_engine import fmt_pace, fmt_time, pace_per_mi, parse_time
 from .plan import generate
@@ -118,6 +118,7 @@ templates.env.filters["clock"] = lambda s: fmt_time(s)[2:] if s < 3600 else fmt_
 templates.env.filters["dayx"] = lambda d, d0: (date.fromisoformat(d) - date.fromisoformat(d0)).days  # chart x
 templates.env.filters["longdate"] = lambda d: date.fromisoformat(d).strftime("%-d %b")
 templates.env.globals["band"] = band_segments
+templates.env.globals["LABELS"] = scorecard.LABELS
 
 
 def today() -> date:
@@ -173,7 +174,7 @@ def dashboard(request: Request, msg: str = "", confirm: str = "", on: str = "", 
     s, weeks, auto_sync = view_with_sync()
     expires = garmin_api.key_expiry() if os.environ.get("GARMIN_API_KEY") else None
     page = view.dashboard(s, weeks, today(), db.results(), expires, confirm, _day(on), _day(orig),
-                          -1 if by == "-1" else 1)
+                          -1 if by == "-1" else 1, load_settings()["paces"]["easy"])
     return templates.TemplateResponse(request, "index.html",
                                       {**page, "auto_sync": auto_sync, "msg": msg, "prev_open": prev == "1"})
 
@@ -205,7 +206,7 @@ def progress_page(request: Request, msg: str = ""):
         "trend_start": (t - timedelta(days=progress.TREND_DAYS - 1)).isoformat(),
         "long_runs": progress.long_runs(weeks), "plan": progress.plan_bars(weeks),
         "ankle": progress.ankle_table(weeks, st["tests"]), "ankle_state": st,
-        "summaries": progress.summaries(weeks, s, st, db.results(), t),
+        "summaries": progress.summaries(weeks, s, st, db.results(), t, ref_pace),
     })
 
 

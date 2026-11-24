@@ -117,3 +117,9 @@ def test_all_good(monkeypatch):
     for day in ("2026-10-19", "2026-10-21", "2026-10-23", "2026-10-24"):
         db.toggle_snack(day, "band_eversion")
     assert summaries(monkeypatch, date(2026, 10, 27))[0]["next"] == "Keep doing what you're doing."
+
+
+def test_week_one_is_too_early(monkeypatch):
+    week_one()
+    card = summaries(monkeypatch, date(2026, 10, 27))[0]["card"]
+    assert card["verdict"]["state"] == "early" and card["weakest"]

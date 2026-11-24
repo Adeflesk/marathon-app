@@ -16,6 +16,8 @@ Everything below uses data the app already stores (splits, laps, tests, logs, ch
 - [x] **Ankle trend:** test results against their gates, pain scores over time, hop and balance stages.
 - [x] **Weekly summary** each Sunday: runs done against the plan, strength, ankle and one focus for next
       week (the week 1 review, written by the app).
+- [x] **Weekly scorecard** (23 Nov 2026): each week's summary says whether it went in the right direction, with
+      an arrow per signal against the 4 weeks before, the weakest areas, and the user's feel never overruled.
 
 ## 2. A plan that responds to what was actually done
 

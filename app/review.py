@@ -136,7 +136,8 @@ def review(workout: dict, run: dict, detail: dict, paces: dict) -> dict:
     d = drift(sp)
     words = _drift_words(d)
     avg = run["seconds"] / run["km"] if run["km"] else None
-    out = {"splits": sp, "drift": d, "reps": [], "note": "", "verdict": "neutral", "headline": ""}
+    out = {"splits": sp, "drift": d, "reps": [], "note": "", "verdict": "neutral", "headline": "", "mp_on": None,
+           "form": False}
 
     if workout["type"] == "strides":
         return _strides(workout, run, detail, paces, out)
@@ -157,6 +158,7 @@ def review(workout: dict, run: dict, detail: dict, paces: dict) -> dict:
         return out
 
     out["note"] = form_note(workout, sp)
+    out["form"] = bool(out["note"])
     mp_km = workout.get("mp_km") or 0
     if workout["type"] == "long" and mp_km and sp:
         tail = sp[-math.ceil(mp_km):]
@@ -164,7 +166,8 @@ def review(workout: dict, run: dict, detail: dict, paces: dict) -> dict:
         pace = sum(s["pace"] * s["km"] for s in tail) / km
         diff = pace - paces["marathon"]
         out["headline"] = f"Last {mp_km:g} km averaged {fmt_pace(pace)}/km"
-        if abs(diff) <= ON_PACE_S:
+        out["mp_on"] = abs(diff) <= ON_PACE_S
+        if out["mp_on"]:
             out["headline"] += ", on marathon pace."
             out["verdict"] = "good"
         else:

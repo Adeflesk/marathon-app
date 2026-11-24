@@ -130,6 +130,16 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   against the 4 before, ±3 steady), `steps_view(steps, checks, logs, t)` (on-feet = total − run steps; heavy =
   above the 80th percentile of the previous 28 days, ≥ 14 of them; `pattern` only with 2+ heavy days in 28 followed
   next day by `ankle.trouble_dates()`, episodes ≥ 3 days apart).
+- `app/scorecard.py` — pure, the weekly scorecard on each `progress.summaries()` entry (`card`; `summaries(..., ref_pace)`
+  takes the settings' easy pace, which `main` passes on Progress and to `view.dashboard`/`last_summary`). Rows are
+  `{key, group, arrow ("up"/"flat"/"down"/None), text, past}`, each week against the 4 before it:
+  `running_rows()` gives `fitness`, `long`, `plan`, `mp`, `form` and `feel` (the 1–5 feel, also `value`), and
+  `strength_rows()` gives `sessions`, `loads` (held counts as up in Cutback, Taper and Race week), `stages` (hop and
+  balance replayed at the week's end and 28 days before, never before the plan), `ankle` and `snacks`.
+  `verdict()` takes the first rule that applies: `ankle` down; `disagree` (feel down, not off: the numbers never overrule
+  the feel); `early` (< 3 `past` rows with arrows, i.e. compared with earlier weeks; never when feel is down); `off` (2+ running rows other than feel down, or fitness down two weeks
+  running); `right`. `weakest()` gives the down rows in `ORDER` (max 2), else the first flat one. A stage stepping back is a
+  weak spot, never the ankle verdict. Never changes the plan.
 - `app/fuel.py` — pure: `gel_minutes` (45, then every 35, none in the last 10; runs ≥ 90 min only),
   `long_run_note(km, mp_km, long_pace)`, `race_plan(mp, stations, gel_stations)` (first 5 km MP + 5, the rest
   quicker so the finish is MP × 42.195; gels before the first gel station carried, later ones at the last gel
@@ -167,7 +177,8 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   splits, heart-rate drift (second half against first, first km excluded), easy runs quicker than MP + 20 s
   flagged, the long run's MP finish checked from its last splits, and structured sessions checked rep by
   rep from Garmin `work` laps (within 10 s/km is on pace). A long run without an MP finish reads "Long run at
-  {pace} (planned {long})". `splits()` drops splits under `MIN_SPLIT_KM` (50 m) and carries `cadence`, `stride`,
+  {pace} (planned {long})". `mp_on` (True/False on a long run with an MP finish, else None) and `form` (a form note
+  was given) feed the scorecard. `splits()` drops splits under `MIN_SPLIT_KM` (50 m) and carries `cadence`, `stride`,
   `contact`; `form_note()` (easy and long runs, ≥ 8 full km with cadence; the part before an MP finish) notes
   cadence down ≥ 4 steps/min or stride up ≥ 5% at a pace no quicker, early part against the last third. Never
   changes the verdict. Strides days list each stride without judging it, skip drift, and

@@ -34,6 +34,13 @@
   .summaries details { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
   .summaries summary { cursor: pointer; font-weight: 600; }
   .summaries p { margin: 8px 0 0; }
+  .score { list-style: none; padding: 0; margin: 4px 0 0; }
+  .score li { padding: 3px 0 3px 24px; position: relative; }
+  .score li span.arrow { position: absolute; left: 0; font-weight: 700; }
+  .score li.up span.arrow, .score li.flat span.arrow { color: var(--good); }
+  .score li.down span.arrow { color: var(--warn); }
+  .score li.none span.arrow { color: var(--mute); }
+  .score-group { margin: 10px 0 0; font-weight: 600; }
 </style>
 {% endblock %}
 {% block body %}
@@ -248,10 +255,24 @@
 
 <section class="summaries" aria-labelledby="sum-h" style="margin-top:24px">
   <h2 id="sum-h">Weekly summaries</h2>
-  {% for x in summaries %}
-  <details{{ ' open' if loop.first }}>
-    <summary>Week {{ x.week }} · {{ x.start.strftime('%-d %b') }} – {{ x.end.strftime('%-d %b') }} · {{ x.done|km }} of {{ x.planned|km }} km</summary>
-    <p>{{ x.sentences|join(' ') }}</p>
+  {% set SHORT = {"right": "Right direction", "disagree": "Mixed feelings", "early": "Too early", "ankle": "Ankle first", "off": "Not the right direction"} %}
+  {% set GLYPH = {"up": "↑", "flat": "→", "down": "↓", None: "–"} %}
+  {% set SAY = {"up": "improving", "flat": "holding", "down": "falling", None: "not enough data"} %}
+  {% for x in summaries %}{% set c = x.card %}
+  <details id="week-{{ x.week }}"{{ ' open' if loop.first }}>
+    <summary>Week {{ x.week }} · {{ x.start.strftime('%-d %b') }} – {{ x.end.strftime('%-d %b') }} · {{ x.done|km }} of {{ x.planned|km }} km · {{ SHORT[c.verdict.state] }}</summary>
+    <p><strong>{{ c.verdict.text }}</strong></p>
+    {% for group, title in (("running", "Running"), ("strength", "Strength and ankle")) %}
+    <p class="score-group">{{ title }}</p>
+    <ul class="score">
+      {% for r in c.rows if r.group == group %}{% set label = LABELS[r.key] %}
+      <li class="{{ r.arrow or 'none' }}" aria-label="{{ label }}: {{ SAY[r.arrow] }}, {{ r.text }}"><span class="arrow" aria-hidden="true">{{ GLYPH[r.arrow] }}</span><span aria-hidden="true">{{ label }}: {{ r.text }}</span></li>
+      {% endfor %}
+    </ul>
+    {% endfor %}
+    <p class="score-group">Weakest</p>
+    <p>{{ c.weakest|join(' ') }}</p>
+    <p class="mute">{{ x.sentences|join(' ') }}</p>
     <p><strong>Next week:</strong> {{ x.next }}</p>
   </details>
   {% else %}

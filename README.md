@@ -84,7 +84,7 @@ your goal, and marathon pace, the sessions and the watch files follow; **Back to
 back exactly. The app never changes the goal by itself.
 
 Below: charts of fitness, long runs and km planned against done, the ankle tests against their targets, and
-a summary of every finished week with one focus for the next. The Ankle section also shows:
+a scorecard for every finished week (below). The Ankle section also shows:
 
 - **Cadence** at easy pace (same pace every week, so a quicker or slower run doesn't move it), with a reading
   over the last 4 weeks: steady, rising or falling.
@@ -92,8 +92,49 @@ a summary of every finished week with one focus for the next. The Ankle section 
   ankle was worse (a "worse than usual" morning check or ankle pain logged). A heavy day is one in your own top
   fifth of the previous 4 weeks, since long days on your feet are normal for you. One heavy day gets no
   message. Only when it repeats (twice in 4 weeks, a worse ankle the day after a heavy day, at least 3 days
-  apart) does it say so. It shows what happened after what, never that the steps caused it. Last week's summary also shows on This week
-on Monday and Tuesday. A week no sync has covered says so, since runs may be missing.
+  apart) does it say so. It shows what happened after what, never that the steps caused it.
+
+### Weekly scorecard
+
+Each finished week gets a scorecard that answers **was the week in the right direction, and where do I need to
+strengthen?** Each line has an arrow: ↑ improving, → holding, ↓ falling, or – when there isn't enough to judge
+yet.
+
+**Running:**
+- **Fitness:** heart rate at easy pace against the 4 weeks before. 2 beats lower is ↑.
+- **Long run:** ↓ if heart rate drifted, ↑ if it was your longest yet and held steady.
+- **Plan done:** km done against planned. 95% or more is ↑, under 80% is ↓.
+- **Marathon pace:** only in weeks with marathon-pace work.
+- **Late-run form:** ↓ if a run's cadence fell or its stride lengthened late. Otherwise, your cadence trend.
+- **How it felt:** the check-in's 1–5 against your last 4 weeks. 2 or less is always ↓.
+
+**Strength and ankle:**
+- **Strength done.**
+- **Strength loads:** weights against 4 weeks before. Held loads count as ↑ in cutback and taper weeks, because
+  holding is the plan there.
+- **Hops and balance:** stages against 4 weeks before.
+- **Ankle:** ↓ on a worse morning, ankle pain of 3 or more, or check-in pain of 3 or more. ↑ in a test week that
+  meets more targets.
+- **Snacks:** 4 days or more is ↑.
+
+The verdict at the top goes by the first of these that applies:
+
+1. **Ankle first:** the ankle line is ↓. Nothing else matters that week.
+2. **The numbers and how you felt disagree:** you rated the week poorly while the numbers look fine. The
+   numbers never overrule how you felt.
+3. **Too early to say:** fewer than 3 lines can be compared with past weeks yet. The first weeks read like this.
+   A poor feel is never hidden behind it.
+4. **Not the right direction:** two running lines are ↓, or fitness is ↓ two weeks running.
+5. **Right direction:** with how many lines are improving or holding.
+
+A hop or balance stage stepping back is named as a weak spot, but doesn't make the verdict "ankle first" on its
+own.
+
+Under the verdict come the weakest one or two lines, ankle and feel first, then what happened that week and one
+focus for the next. The scorecard never changes the plan. It's worked out again each time you open the page, so
+a late sync or an edited check-in updates it. Last week's verdict and weak spots also show on This week on
+Monday and Tuesday, with a link to the full scorecard. A week no sync has covered says so, since runs may be
+missing.
 
 ## Fuelling and race day
 
