@@ -41,3 +41,14 @@ def test_race_link_from_taper_on(client, monkeypatch):
     monkeypatch.setattr(main, "today", lambda: date(2027, 2, 22))
     assert 'href="/race"' in client.get("/").text
     assert 'href="/race"' in client.get("/plan").text
+
+
+@pytest.mark.parametrize("day, heading", [
+    (date(2026, 10, 10), "21 weeks to Barcelona"),  # before the plan starts: all of it
+    (date(2026, 11, 27), "16 weeks to Barcelona"),  # week 6 of 21: this week and the 15 after it
+    (date(2027, 3, 1), "2 weeks to Barcelona"),
+    (date(2027, 3, 10), "Race week"),
+])
+def test_plan_counts_down_the_weeks(client, monkeypatch, day, heading):
+    monkeypatch.setattr(main, "today", lambda: day)
+    assert f'<h1 class="display">{heading}</h1>' in client.get("/plan").text

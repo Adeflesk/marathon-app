@@ -209,7 +209,9 @@ To try numbers without saving them: `python -m app.pace_engine 10 52:30`.
   weights and reps, then tap **Easy**, **Right**, or **Hard** to save. The app steps the load up or down next
   time based on your rating. A break of 11–28 days drops one step; over 28 days resets conservatively (≤ 80%).
   Carries take the weight you carry too, and step up once the distance feels right. Timed holds and carries
-  move in 5 s or 5 m steps.
+  move in 5 s or 5 m steps and stay inside their range: hold longer than the top and the next target is the top,
+  with a note saying it's plenty rather than a step back. Whenever a target is lighter or shorter than last
+  time (a Hard rating, time off, or a harder variation like slow lowering), the card says why.
 - **Ankle snacks**: short 8–10 minute balance and tendon drills on non-strength days (`ankle_days`: default Mon,
   Wed, Fri, Sat). Ticking snack items advances your balance stage (Stage 1 to 6).
 - **Ankle tests & hop stages**: readiness tests (20-pogo trial, calf raises to fatigue, eyes-closed balance,

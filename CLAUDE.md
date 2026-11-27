@@ -77,6 +77,9 @@ are persisted. Keep it that way: changing `settings.json` or the generator shoul
   - `suggest(ex, history, ctx, eq, today)`: suggests working weight, target reps, rungs, and warm-up ladders.
   - Adjusts load from Easy/Right/Hard ratings and RPE targets. Advances tempo/pause rungs at top weight.
   - Guards against load increases during cutbacks, tapers, fatigue trims, or when an ankle flag is active.
+  - Timed holds and carries stay in range: done past the top, the top is the target, worded "past the range, so
+    {hi} is plenty here" (and names the `harder` variation). `view.lower_than_last()` sets `ex["lower"]`, and the
+    card shows the reason whenever the target is lighter or shorter than the last log.
   - Conservative load drops after 11–28 days (-1 step) or >28 days off (≤ 80% weight).
 - `app/ankle.py` — pure ankle state and readiness tracking.
   - Replays logs, tests, and checks to determine `hop_stage` (0–3), `balance_stage` (0–6), and `test_weeks` (weeks 1, 4, 7, 11, 15).

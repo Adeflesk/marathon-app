@@ -21,7 +21,8 @@
 {% endblock %}
 {% block body %}
 <section class="intro stack">
-  <h1 class="display">{{ weeks|length }} weeks to Barcelona</h1>
+  {% set left = weeks|rejectattr('is_past')|list|length %}
+  <h1 class="display">{% if left == 1 %}Race week{% elif left %}{{ left }} weeks to Barcelona{% else %}Barcelona done{% endif %}</h1>
   <p class="mute">Each bar is a week of running, drawn to scale: easy in green, marathon pace in yellow, hard in red. The peak is {{ s.peak_weekly_km }} km.</p>
 </section>
 
